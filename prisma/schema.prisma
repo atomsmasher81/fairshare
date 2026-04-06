@@ -37,12 +37,13 @@ model TelegramLink {
 }
 
 model Group {
-  id          String   @id @default(cuid())
+  id          String    @id @default(cuid())
   name        String
   description String?
-  inviteCode  String   @unique
+  inviteCode  String    @unique
   createdById String
-  createdAt   DateTime @default(now())
+  createdAt   DateTime  @default(now())
+  deletedAt   DateTime? // Soft delete
 
   // Relations
   members     GroupMember[]
@@ -64,17 +65,18 @@ model GroupMember {
 }
 
 model Expense {
-  id          String   @id @default(cuid())
+  id          String    @id @default(cuid())
   groupId     String
   description String
-  amount      Int      // Store in smallest unit (paise)
-  currency    String   @default("INR")
-  category    String   @default("other")
+  amount      Int       // Store in smallest unit (paise)
+  currency    String    @default("INR")
+  category    String    @default("other")
   date        DateTime
   paidById    String
   createdById String
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  deletedAt   DateTime? // Soft delete
 
   // Relations
   group     Group          @relation(fields: [groupId], references: [id], onDelete: Cascade)
