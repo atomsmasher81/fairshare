@@ -131,7 +131,10 @@ bot.command('groups', async (ctx) => {
   }
   
   const groups = await prisma.group.findMany({
-    where: { members: { some: { userId: user.id } } },
+    where: { 
+      members: { some: { userId: user.id } },
+      deletedAt: null,
+    },
     include: { _count: { select: { members: true } } },
   });
   
@@ -153,7 +156,10 @@ bot.command('setgroup', async (ctx) => {
   }
   
   const groups = await prisma.group.findMany({
-    where: { members: { some: { userId: user.id } } },
+    where: { 
+      members: { some: { userId: user.id } },
+      deletedAt: null,
+    },
   });
   
   if (groups.length === 0) {
@@ -174,9 +180,9 @@ bot.callbackQuery(/^setgroup:(.+)$/, async (ctx) => {
   const groupId = ctx.match[1];
   const user = await getLinkedUser(ctx.from.id);
   
-  const group = await prisma.group.findUnique({ where: { id: groupId } });
+  const group = await prisma.group.findUnique({ where: { id: groupId, deletedAt: null } });
   if (!group) {
-    await ctx.answerCallbackQuery({ text: 'Group not found' });
+    await ctx.answerCallbackQuery({ text: 'Group not found or deleted' });
     return;
   }
   
@@ -207,6 +213,7 @@ bot.command('summary', async (ctx) => {
     where: {
       groupId: ctx.session.groupId,
       date: { gte: startOfMonth },
+      deletedAt: null,
     },
     include: { paidBy: true },
     orderBy: { date: 'desc' },
@@ -247,7 +254,7 @@ bot.command('balance', async (ctx) => {
   
   // Calculate balance
   const expenses = await prisma.expense.findMany({
-    where: { groupId: ctx.session.groupId },
+    where: { groupId: ctx.session.groupId, deletedAt: null },
     include: { splits: true },
   });
   
@@ -295,6 +302,17 @@ bot.on('message:text', async (ctx) => {
   
   if (!ctx.session.groupId) {
     await ctx.reply('❌ No group selected. Use /setgroup first.');
+    return;
+  }
+
+  // Verify group still exists and not deleted
+  const group = await prisma.group.findUnique({ 
+    where: { id: ctx.session.groupId, deletedAt: null } 
+  });
+  if (!group) {
+    ctx.session.groupId = null;
+    ctx.session.groupName = null;
+    await ctx.reply('❌ Group no longer exists. Use /setgroup to pick another.');
     return;
   }
   
