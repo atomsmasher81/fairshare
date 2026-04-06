@@ -24,10 +24,11 @@ export default async function DashboardPage() {
   const session = await getSession()
   const userId = session.userId!
 
-  // Fetch user's groups with member info
+  // Fetch user's groups with member info (excluding deleted)
   const groups: GroupWithDetails[] = await prisma.group.findMany({
     where: {
       members: { some: { userId } },
+      deletedAt: null,
     },
     include: {
       members: {
@@ -36,10 +37,11 @@ export default async function DashboardPage() {
         },
       },
       expenses: {
+        where: { deletedAt: null },
         include: { splits: true },
       },
       settlements: true,
-      _count: { select: { expenses: true } },
+      _count: { select: { expenses: { where: { deletedAt: null } } } },
     },
     orderBy: { createdAt: 'desc' },
   })
