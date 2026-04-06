@@ -2,9 +2,9 @@ import Link from 'next/link'
 import { notFound, redirect } from 'next/navigation'
 import { prisma } from '@/lib/prisma'
 import { getSession } from '@/lib/auth'
-import { formatAmount, formatDate, getCategoryLabel } from '@/lib/utils'
 import { BalanceCard } from '@/components/balance-card'
 import { InviteLink } from '@/components/invite-link'
+import { ExpenseList } from '@/components/expense-list'
 
 interface Props {
   params: Promise<{ id: string }>
@@ -27,9 +27,9 @@ export default async function GroupPage({ params }: Props) {
     notFound()
   }
 
-  // Fetch group with details
+  // Fetch group with details (excluding soft-deleted expenses)
   const group = await prisma.group.findUnique({
-    where: { id },
+    where: { id, deletedAt: null },
     include: {
       members: {
         include: {
@@ -37,6 +37,7 @@ export default async function GroupPage({ params }: Props) {
         },
       },
       expenses: {
+        where: { deletedAt: null },
         include: {
           paidBy: { select: { id: true, displayName: true } },
           splits: {
@@ -46,7 +47,7 @@ export default async function GroupPage({ params }: Props) {
           },
         },
         orderBy: { date: 'desc' },
-        take: 20,
+        take: 50,
       },
     },
   })
@@ -55,7 +56,7 @@ export default async function GroupPage({ params }: Props) {
     notFound()
   }
 
-  // Calculate balances
+  // Calculate balances (only non-deleted expenses)
   const memberBalances = new Map<string, number>()
   group.members.forEach(m => memberBalances.set(m.userId, 0))
 
@@ -77,6 +78,17 @@ export default async function GroupPage({ params }: Props) {
   })
 
   const userBalance = memberBalances.get(session.userId) || 0
+
+  // Format expenses for the client component
+  const formattedExpenses = group.expenses.map(e => ({
+    id: e.id,
+    description: e.description,
+    amount: e.amount,
+    category: e.category,
+    date: e.date.toISOString(),
+    paidBy: e.paidBy,
+    splits: e.splits.map(s => ({ user: s.user, amount: s.amount })),
+  }))
 
   return (
     <div className="space-y-6">
@@ -136,36 +148,10 @@ export default async function GroupPage({ params }: Props) {
         <div className="p-5 border-b">
           <h2 className="font-semibold text-gray-800">Recent Expenses</h2>
         </div>
-
-        {group.expenses.length === 0 ? (
-          <div className="p-8 text-center text-gray-500">
-            No expenses yet. Add your first expense!
-          </div>
-        ) : (
-          <div className="divide-y">
-            {group.expenses.map((expense) => (
-              <div key={expense.id} className="p-4 hover:bg-gray-50">
-                <div className="flex items-start justify-between">
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <span className="text-lg">{getCategoryLabel(expense.category).split(' ')[0]}</span>
-                      <span className="font-medium text-gray-800">{expense.description}</span>
-                    </div>
-                    <p className="text-sm text-gray-500 mt-1">
-                      Paid by {expense.paidBy.displayName} · {formatDate(expense.date)}
-                    </p>
-                  </div>
-                  <div className="text-right">
-                    <p className="font-semibold text-gray-800">{formatAmount(expense.amount)}</p>
-                    <p className="text-xs text-gray-500">
-                      {expense.splits.length} way split
-                    </p>
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
+        <ExpenseList 
+          expenses={formattedExpenses} 
+          groupId={id}
+        />
       </div>
     </div>
   )
