@@ -23,6 +23,17 @@ model User {
   settlementsFrom  Settlement[]    @relation("SettlementFrom")
   settlementsTo    Settlement[]    @relation("SettlementTo")
   activities       Activity[]
+  telegramLink     TelegramLink?
+}
+
+model TelegramLink {
+  id               String   @id @default(cuid())
+  telegramId       String   @unique
+  telegramUsername String?
+  userId           String   @unique
+  createdAt        DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
 model Group {
