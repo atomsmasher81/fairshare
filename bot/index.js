@@ -1,6 +1,12 @@
 require('dotenv').config({ path: require('path').join(__dirname, '..', '.env') });
 const { Bot, InlineKeyboard, session } = require('grammy');
 const { PrismaClient } = require('@prisma/client');
+const {
+  QuickExpenseError,
+  createQuickExpenseFromText,
+  formatAmount,
+} = require('../src/lib/quick-expense');
+const { notifyExpenseSplitMembers } = require('../src/lib/telegram-notifications');
 
 const prisma = new PrismaClient();
 const bot = new Bot(process.env.TELEGRAM_BOT_TOKEN);
@@ -9,12 +15,6 @@ const bot = new Bot(process.env.TELEGRAM_BOT_TOKEN);
 bot.use(session({
   initial: () => ({ groupId: null, groupName: null }),
 }));
-
-// Helper: Format amount from paise to rupees
-const formatAmount = (paise) => `₹${(paise / 100).toFixed(2)}`;
-
-// Helper: Parse amount string to paise
-const parseAmount = (str) => Math.round(parseFloat(str) * 100);
 
 // Helper: Get or create user link between Telegram and FairShare
 async function getLinkedUser(telegramId) {
@@ -305,81 +305,36 @@ bot.on('message:text', async (ctx) => {
     return;
   }
 
-  // Verify group still exists and not deleted
-  const group = await prisma.group.findUnique({ 
-    where: { id: ctx.session.groupId, deletedAt: null } 
-  });
-  if (!group) {
-    ctx.session.groupId = null;
-    ctx.session.groupName = null;
-    await ctx.reply('❌ Group no longer exists. Use /setgroup to pick another.');
-    return;
-  }
-  
-  // Parse: "description amount" e.g., "milk 20" or "dinner 450"
-  const match = text.match(/^(.+?)\s+(\d+(?:\.\d{1,2})?)$/);
-  if (!match) {
-    await ctx.reply(
-      '❓ Didn\'t understand. Format:\n' +
-      '`milk 20` or `dinner 450`',
-      { parse_mode: 'Markdown' }
-    );
-    return;
-  }
-  
-  const description = match[1].trim();
-  const amount = parseAmount(match[2]);
-  
-  if (amount <= 0) {
-    await ctx.reply('❌ Amount must be greater than 0');
-    return;
-  }
-  
-  // Get group members for split
-  const members = await prisma.groupMember.findMany({
-    where: { groupId: ctx.session.groupId },
-    include: { user: { select: { id: true, displayName: true } } },
-  });
-  
-  const splitAmount = Math.floor(amount / members.length);
-  const remainder = amount - (splitAmount * members.length);
-  
-  // Create expense with equal splits
-  const expense = await prisma.expense.create({
-    data: {
-      groupId: ctx.session.groupId,
-      description,
-      amount,
-      category: 'other',
-      date: new Date(),
-      paidById: user.id,
-      createdById: user.id,
-      splits: {
-        create: members.map((m, i) => ({
-          userId: m.userId,
-          amount: splitAmount + (i === 0 ? remainder : 0),
-        })),
-      },
-    },
-  });
-  
-  // Log activity
-  await prisma.activity.create({
-    data: {
-      groupId: ctx.session.groupId,
+  try {
+    const result = await createQuickExpenseFromText({
+      prisma,
       userId: user.id,
-      type: 'expense_added',
-      metadata: JSON.stringify({ expenseId: expense.id, description, amount, source: 'telegram' }),
-    },
-  });
-  
-  const splitInfo = members.map(m => m.user.displayName).join(', ');
-  await ctx.reply(
-    `✅ Added *${description}* - ${formatAmount(amount)}\n` +
-    `Split between: ${splitInfo}\n` +
-    `(${formatAmount(splitAmount)} each)`,
-    { parse_mode: 'Markdown' }
-  );
+      groupId: ctx.session.groupId,
+      text,
+      source: 'telegram',
+    });
+
+    ctx.session.groupName = result.group.name;
+    await ctx.reply(result.message);
+    await notifyExpenseSplitMembers({
+      prisma,
+      expense: result.expense,
+      group: result.group,
+      excludeUserIds: [user.id],
+    });
+  } catch (error) {
+    if (error instanceof QuickExpenseError) {
+      if (error.code === 'GROUP_NOT_FOUND') {
+        ctx.session.groupId = null;
+        ctx.session.groupName = null;
+      }
+      await ctx.reply(`❌ ${error.publicMessage}`);
+      return;
+    }
+
+    console.error('Telegram quick expense error:', error);
+    await ctx.reply('❌ Failed to add expense. Please try again.');
+  }
 });
 
 // Start the bot

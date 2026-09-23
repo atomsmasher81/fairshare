@@ -1,6 +1,8 @@
 'use client'
 
 import { useState } from 'react'
+import { Button } from '@/components/ui/button'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 
 interface InviteLinkProps {
   code: string
@@ -19,7 +21,6 @@ export function InviteLink({ code }: InviteLinkProps) {
       setCopied(true)
       setTimeout(() => setCopied(false), 2000)
     } catch {
-      // Fallback for older browsers
       const textArea = document.createElement('textarea')
       textArea.value = inviteUrl
       document.body.appendChild(textArea)
@@ -32,26 +33,24 @@ export function InviteLink({ code }: InviteLinkProps) {
   }
 
   return (
-    <div className="bg-white rounded-xl p-5 shadow-sm border">
-      <h2 className="font-semibold text-gray-800 mb-3">Invite Friends</h2>
-      <div className="flex items-center gap-2">
-        <div className="flex-1 bg-gray-100 rounded-lg px-4 py-2 font-mono text-sm text-gray-600 truncate">
-          {inviteUrl}
+    <Card>
+      <CardHeader>
+        <CardTitle>Invite friends</CardTitle>
+        <CardDescription>Share this link to bring people into the group instantly.</CardDescription>
+      </CardHeader>
+      <CardContent>
+        <div className="flex items-center gap-2">
+          <div className="flex-1 truncate rounded-xl border border-[var(--border)] bg-[var(--surface)] px-4 py-3 font-mono text-sm text-[var(--muted-foreground)]">
+            {inviteUrl}
+          </div>
+          <Button onClick={copyToClipboard} variant={copied ? 'secondary' : 'default'}>
+            {copied ? '✓ Copied!' : 'Copy'}
+          </Button>
         </div>
-        <button
-          onClick={copyToClipboard}
-          className={`px-4 py-2 rounded-lg text-sm font-medium transition ${
-            copied 
-              ? 'bg-green-100 text-green-700' 
-              : 'bg-blue-600 text-white hover:bg-blue-700'
-          }`}
-        >
-          {copied ? '✓ Copied!' : 'Copy'}
-        </button>
-      </div>
-      <p className="text-xs text-gray-500 mt-2">
-        Share this link with friends to invite them to the group
-      </p>
-    </div>
+        <p className="mt-2 text-xs text-[var(--muted-foreground)]">
+          Share this link with friends to invite them to the group
+        </p>
+      </CardContent>
+    </Card>
   )
 }

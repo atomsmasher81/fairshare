@@ -3,6 +3,9 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
+import { Button } from '@/components/ui/button'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Input } from '@/components/ui/input'
 
 export default function LoginPage() {
   const router = useRouter()
@@ -40,63 +43,76 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-500 to-purple-600 p-4">
-      <div className="bg-white rounded-2xl shadow-xl p-8 w-full max-w-md">
-        <div className="text-center mb-8">
-          <h1 className="text-3xl font-bold text-gray-800">FairShare</h1>
-          <p className="text-gray-500 mt-2">Welcome back!</p>
+    <div className="flex min-h-screen items-center justify-center px-4 py-10">
+      <div className="grid w-full max-w-5xl gap-8 lg:grid-cols-[1.1fr_0.9fr] lg:items-center">
+        <div className="hidden pr-8 lg:block">
+          <p className="eyebrow mb-4">FairShare / clean expense workspace</p>
+          <h1 className="text-5xl font-semibold tracking-[-0.06em] text-[var(--foreground)]">
+            Split expenses with a calmer, cleaner flow.
+          </h1>
+          <p className="mt-5 max-w-xl text-lg text-[var(--muted-foreground)]">
+            Track group spending, balances, and settlements in one warm, focused workspace.
+          </p>
+          <div className="mt-8 flex gap-3 text-sm text-[var(--muted-foreground)]">
+            <span className="rounded-full border border-[var(--border)] bg-[var(--surface)] px-3 py-1.5">Fast group setup</span>
+            <span className="rounded-full border border-[var(--border)] bg-[var(--surface)] px-3 py-1.5">Clear balances</span>
+            <span className="rounded-full border border-[var(--border)] bg-[var(--surface)] px-3 py-1.5">Simple settle-up</span>
+          </div>
         </div>
 
-        <form onSubmit={handleSubmit} className="space-y-6">
-          {error && (
-            <div className="bg-red-50 text-red-600 p-3 rounded-lg text-sm">
-              {error}
-            </div>
-          )}
+        <Card className="w-full border-[var(--border-strong)] bg-[rgba(247,246,241,0.88)]">
+          <CardHeader className="space-y-3">
+            <div className="eyebrow">Welcome back</div>
+            <CardTitle className="text-3xl">Sign in to FairShare</CardTitle>
+            <CardDescription>Pick up where your group left off.</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <form onSubmit={handleSubmit} className="space-y-6">
+              {error && (
+                <div className="rounded-xl border border-[var(--danger-border)] bg-[var(--danger-soft)] p-3 text-sm text-[var(--danger)]">
+                  {error}
+                </div>
+              )}
 
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Username
-            </label>
-            <input
-              type="text"
-              value={username}
-              onChange={(e) => setUsername(e.target.value)}
-              className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition"
-              placeholder="Enter your username"
-              required
-            />
-          </div>
+              <div>
+                <label className="mb-2 block text-sm font-medium text-[var(--foreground)]">
+                  Username
+                </label>
+                <Input
+                  type="text"
+                  value={username}
+                  onChange={(e) => setUsername(e.target.value)}
+                  placeholder="Enter your username"
+                  required
+                />
+              </div>
 
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Password
-            </label>
-            <input
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition"
-              placeholder="Enter your password"
-              required
-            />
-          </div>
+              <div>
+                <label className="mb-2 block text-sm font-medium text-[var(--foreground)]">
+                  Password
+                </label>
+                <Input
+                  type="password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  placeholder="Enter your password"
+                  required
+                />
+              </div>
 
-          <button
-            type="submit"
-            disabled={loading}
-            className="w-full bg-blue-600 text-white py-3 rounded-lg font-medium hover:bg-blue-700 transition disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            {loading ? 'Signing in...' : 'Sign In'}
-          </button>
-        </form>
+              <Button type="submit" disabled={loading} className="w-full">
+                {loading ? 'Signing in...' : 'Sign In'}
+              </Button>
+            </form>
 
-        <p className="text-center text-gray-500 mt-6">
-          Don&apos;t have an account?{' '}
-          <Link href="/register" className="text-blue-600 hover:underline font-medium">
-            Sign up
-          </Link>
-        </p>
+            <p className="mt-6 text-center text-sm text-[var(--muted-foreground)]">
+              Don&apos;t have an account?{' '}
+              <Link href="/register" className="font-medium text-[var(--accent)] hover:opacity-80">
+                Sign up
+              </Link>
+            </p>
+          </CardContent>
+        </Card>
       </div>
     </div>
   )

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { getSession } from '@/lib/auth'
+import { notifyExpenseSplitMembers } from '@/lib/telegram-notifications'
 
 // GET /api/groups/[id]/expenses - List expenses
 export async function GET(
@@ -96,6 +97,7 @@ export async function POST(
       },
       include: {
         paidBy: { select: { id: true, displayName: true } },
+        group: { select: { id: true, name: true } },
         splits: {
           include: {
             user: { select: { id: true, displayName: true } },
@@ -118,7 +120,14 @@ export async function POST(
       },
     })
 
-    return NextResponse.json({ expense })
+    const participantNotifications = await notifyExpenseSplitMembers({
+      prisma,
+      expense,
+      group: expense.group,
+      excludeUserIds: [],
+    })
+
+    return NextResponse.json({ expense, participantNotifications })
   } catch (error) {
     console.error('Error creating expense:', error)
     return NextResponse.json({ error: 'Failed to create expense' }, { status: 500 })

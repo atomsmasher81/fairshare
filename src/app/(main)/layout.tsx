@@ -14,12 +14,12 @@ export default async function MainLayout({
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-transparent">
       <Navbar 
         username={session.username!} 
         isAdmin={session.isAdmin || false} 
       />
-      <main className="container mx-auto px-4 py-6 max-w-4xl">
+      <main className="app-shell py-8 sm:py-10">
         {children}
       </main>
     </div>

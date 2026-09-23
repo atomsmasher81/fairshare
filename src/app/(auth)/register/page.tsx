@@ -3,6 +3,9 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
+import { Button } from '@/components/ui/button'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Input } from '@/components/ui/input'
 
 export default function RegisterPage() {
   const router = useRouter()
@@ -48,93 +51,87 @@ export default function RegisterPage() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-500 to-purple-600 p-4">
-      <div className="bg-white rounded-2xl shadow-xl p-8 w-full max-w-md">
-        <div className="text-center mb-8">
-          <h1 className="text-3xl font-bold text-gray-800">FairShare</h1>
-          <p className="text-gray-500 mt-2">Create your account</p>
-        </div>
+    <div className="flex min-h-screen items-center justify-center px-4 py-10">
+      <Card className="w-full max-w-xl border-[var(--border-strong)] bg-[rgba(247,246,241,0.88)]">
+        <CardHeader className="space-y-3">
+          <div className="eyebrow">New workspace</div>
+          <CardTitle className="text-3xl">Create your FairShare account</CardTitle>
+          <CardDescription>Set up your identity once, then create groups and start splitting.</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <form onSubmit={handleSubmit} className="space-y-5">
+            {error && (
+              <div className="rounded-xl border border-[var(--danger-border)] bg-[var(--danger-soft)] p-3 text-sm text-[var(--danger)]">
+                {error}
+              </div>
+            )}
 
-        <form onSubmit={handleSubmit} className="space-y-5">
-          {error && (
-            <div className="bg-red-50 text-red-600 p-3 rounded-lg text-sm">
-              {error}
+            <div>
+              <label className="mb-2 block text-sm font-medium text-[var(--foreground)]">
+                Display Name
+              </label>
+              <Input
+                type="text"
+                value={displayName}
+                onChange={(e) => setDisplayName(e.target.value)}
+                placeholder="How should we call you?"
+                required
+              />
             </div>
-          )}
 
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Display Name
-            </label>
-            <input
-              type="text"
-              value={displayName}
-              onChange={(e) => setDisplayName(e.target.value)}
-              className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition"
-              placeholder="How should we call you?"
-              required
-            />
-          </div>
+            <div>
+              <label className="mb-2 block text-sm font-medium text-[var(--foreground)]">
+                Username
+              </label>
+              <Input
+                type="text"
+                value={username}
+                onChange={(e) => setUsername(e.target.value)}
+                placeholder="Choose a username"
+                required
+              />
+            </div>
 
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Username
-            </label>
-            <input
-              type="text"
-              value={username}
-              onChange={(e) => setUsername(e.target.value)}
-              className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition"
-              placeholder="Choose a username"
-              required
-            />
-          </div>
+            <div>
+              <label className="mb-2 block text-sm font-medium text-[var(--foreground)]">
+                Password
+              </label>
+              <Input
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder="At least 6 characters"
+                required
+                minLength={6}
+              />
+            </div>
 
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Password
-            </label>
-            <input
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition"
-              placeholder="At least 6 characters"
-              required
-              minLength={6}
-            />
-          </div>
+            <div>
+              <label className="mb-2 block text-sm font-medium text-[var(--foreground)]">
+                Confirm Password
+              </label>
+              <Input
+                type="password"
+                value={confirmPassword}
+                onChange={(e) => setConfirmPassword(e.target.value)}
+                placeholder="Repeat your password"
+                required
+              />
+            </div>
 
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Confirm Password
-            </label>
-            <input
-              type="password"
-              value={confirmPassword}
-              onChange={(e) => setConfirmPassword(e.target.value)}
-              className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition"
-              placeholder="Repeat your password"
-              required
-            />
-          </div>
+            <Button type="submit" disabled={loading} className="w-full">
+              {loading ? 'Creating account...' : 'Create Account'}
+            </Button>
+          </form>
 
-          <button
-            type="submit"
-            disabled={loading}
-            className="w-full bg-blue-600 text-white py-3 rounded-lg font-medium hover:bg-blue-700 transition disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            {loading ? 'Creating account...' : 'Create Account'}
-          </button>
-        </form>
-
-        <p className="text-center text-gray-500 mt-6">
-          Already have an account?{' '}
-          <Link href="/login" className="text-blue-600 hover:underline font-medium">
-            Sign in
-          </Link>
-        </p>
-      </div>
+          <p className="mt-6 text-center text-sm text-[var(--muted-foreground)]">
+            Already have an account?{' '}
+            <Link href="/login" className="font-medium text-[var(--accent)] hover:opacity-80">
+              Sign in
+            </Link>
+          </p>
+        </CardContent>
+      </Card>
     </div>
   )
 }

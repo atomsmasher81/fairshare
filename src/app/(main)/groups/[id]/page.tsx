@@ -2,9 +2,12 @@ import Link from 'next/link'
 import { notFound, redirect } from 'next/navigation'
 import { prisma } from '@/lib/prisma'
 import { getSession } from '@/lib/auth'
-import { BalanceCard } from '@/components/balance-card'
 import { InviteLink } from '@/components/invite-link'
-import { ExpenseList } from '@/components/expense-list'
+import { GroupStats } from '@/components/group-stats'
+import { ExpenseListWithFilters } from '@/components/expense-list-with-filters'
+import { GroupMembersManager } from '@/components/group-members-manager'
+import { Button } from '@/components/ui/button'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 
 interface Props {
   params: Promise<{ id: string }>
@@ -18,7 +21,6 @@ export default async function GroupPage({ params }: Props) {
     redirect('/login')
   }
 
-  // Check membership
   const membership = await prisma.groupMember.findUnique({
     where: { groupId_userId: { groupId: id, userId: session.userId } },
   })
@@ -27,7 +29,6 @@ export default async function GroupPage({ params }: Props) {
     notFound()
   }
 
-  // Fetch group with details (excluding soft-deleted expenses)
   const group = await prisma.group.findUnique({
     where: { id, deletedAt: null },
     include: {
@@ -36,19 +37,6 @@ export default async function GroupPage({ params }: Props) {
           user: { select: { id: true, displayName: true, username: true } },
         },
       },
-      expenses: {
-        where: { deletedAt: null },
-        include: {
-          paidBy: { select: { id: true, displayName: true } },
-          splits: {
-            include: {
-              user: { select: { id: true, displayName: true } },
-            },
-          },
-        },
-        orderBy: { date: 'desc' },
-        take: 50,
-      },
     },
   })
 
@@ -56,103 +44,127 @@ export default async function GroupPage({ params }: Props) {
     notFound()
   }
 
-  // Calculate balances (only non-deleted expenses)
-  const memberBalances = new Map<string, number>()
-  group.members.forEach(m => memberBalances.set(m.userId, 0))
+  const allExpenses = await prisma.expense.findMany({
+    where: { groupId: id, deletedAt: null },
+    include: {
+      paidBy: { select: { id: true, displayName: true } },
+      splits: {
+        include: { user: { select: { id: true, displayName: true } } },
+      },
+    },
+    orderBy: { date: 'desc' },
+  })
 
-  group.expenses.forEach(expense => {
-    const current = memberBalances.get(expense.paidById) || 0
-    memberBalances.set(expense.paidById, current + expense.amount)
+  const settlements = await prisma.settlement.findMany({
+    where: { groupId: id },
+    include: {
+      fromUser: { select: { id: true, displayName: true } },
+      toUser: { select: { id: true, displayName: true } },
+    },
+    orderBy: { date: 'desc' },
+  })
+
+  const totalExpenses = allExpenses.reduce((sum, e) => sum + e.amount, 0)
+  const userPaid = allExpenses
+    .filter(e => e.paidById === session.userId)
+    .reduce((sum, e) => sum + e.amount, 0)
+
+  let userBalance = 0
+  allExpenses.forEach(expense => {
+    if (expense.paidById === session.userId) {
+      userBalance += expense.amount
+    }
     expense.splits.forEach(split => {
-      const curr = memberBalances.get(split.userId) || 0
-      memberBalances.set(split.userId, curr - split.amount)
+      if (split.userId === session.userId) {
+        userBalance -= split.amount
+      }
     })
   })
 
-  const settlements = await prisma.settlement.findMany({ where: { groupId: id } })
   settlements.forEach(s => {
-    const fromBal = memberBalances.get(s.fromUserId) || 0
-    memberBalances.set(s.fromUserId, fromBal + s.amount)
-    const toBal = memberBalances.get(s.toUserId) || 0
-    memberBalances.set(s.toUserId, toBal - s.amount)
+    if (s.fromUserId === session.userId) userBalance += s.amount
+    if (s.toUserId === session.userId) userBalance -= s.amount
   })
 
-  const userBalance = memberBalances.get(session.userId) || 0
-
-  // Format expenses for the client component
-  const formattedExpenses = group.expenses.map(e => ({
+  const formattedExpenses = allExpenses.map(e => ({
     id: e.id,
     description: e.description,
     amount: e.amount,
     category: e.category,
     date: e.date.toISOString(),
     paidBy: e.paidBy,
-    splits: e.splits.map(s => ({ user: s.user, amount: s.amount })),
+    paidById: e.paidById,
+    splits: e.splits.map(s => ({ userId: s.userId, user: s.user, amount: s.amount })),
   }))
+
+  const formattedSettlements = settlements.map(s => ({
+    id: s.id,
+    fromUser: s.fromUser,
+    toUser: s.toUser,
+    amount: s.amount,
+    date: s.date.toISOString(),
+    note: s.note,
+  }))
+
+  const formattedMembers = group.members.map(m => ({
+    userId: m.userId,
+    user: m.user,
+  }))
+
+  const canManageMembers = session.isAdmin || group.createdById === session.userId
 
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div className="flex items-start justify-between">
+      <div className="flex flex-col gap-5 rounded-[28px] border border-[var(--border)] bg-[linear-gradient(180deg,rgba(255,255,255,0.48),rgba(255,255,255,0.18))] p-6 shadow-[var(--shadow-card)] md:flex-row md:items-start md:justify-between">
         <div>
-          <Link href="/dashboard" className="text-blue-600 hover:text-blue-700 text-sm mb-2 inline-block">
+          <Link href="/dashboard" className="mb-3 inline-block text-sm font-medium text-[var(--accent)] hover:opacity-80">
             ← Back
           </Link>
-          <h1 className="text-2xl font-bold text-gray-800">{group.name}</h1>
+          <p className="eyebrow mb-2">Group workspace</p>
+          <h1 className="text-3xl font-semibold text-[var(--foreground)]">{group.name}</h1>
           {group.description && (
-            <p className="text-gray-500 mt-1">{group.description}</p>
+            <p className="mt-2 max-w-2xl text-[var(--muted-foreground)]">{group.description}</p>
           )}
         </div>
-        <Link
-          href={`/groups/${id}/add`}
-          className="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-blue-700 transition"
-        >
-          + Add Expense
-        </Link>
+        <div className="flex gap-2 self-start">
+          <Link href={`/groups/${id}/settle`}>
+            <Button variant="secondary">Settle Up</Button>
+          </Link>
+          <Link href={`/groups/${id}/add`}>
+            <Button>+ Add Expense</Button>
+          </Link>
+        </div>
       </div>
 
-      {/* Balance Summary */}
-      <BalanceCard 
-        balance={userBalance} 
-        groupId={id}
+      <GroupStats
+        totalExpenses={totalExpenses}
+        userPaid={userPaid}
+        userBalance={userBalance}
       />
 
-      {/* Invite Link */}
       <InviteLink code={group.inviteCode} />
 
-      {/* Members */}
-      <div className="bg-white rounded-xl p-5 shadow-sm border">
-        <h2 className="font-semibold text-gray-800 mb-3">
-          Members ({group.members.length})
-        </h2>
-        <div className="flex flex-wrap gap-2">
-          {group.members.map((member) => (
-            <div
-              key={member.userId}
-              className="flex items-center gap-2 bg-gray-100 rounded-full px-3 py-1"
-            >
-              <div className="w-6 h-6 bg-blue-100 rounded-full flex items-center justify-center text-blue-600 text-xs font-medium">
-                {member.user.displayName[0].toUpperCase()}
-              </div>
-              <span className="text-sm text-gray-700">
-                {member.user.displayName}
-                {member.userId === session.userId && ' (you)'}
-              </span>
-            </div>
-          ))}
-        </div>
-      </div>
+      <Card>
+        <CardHeader>
+          <CardTitle>Members ({group.members.length})</CardTitle>
+        </CardHeader>
+        <CardContent className="pt-0">
+          <GroupMembersManager
+            groupId={id}
+            members={group.members}
+            currentUserId={session.userId}
+            canManageMembers={canManageMembers}
+          />
+        </CardContent>
+      </Card>
 
-      {/* Expenses */}
-      <div className="bg-white rounded-xl shadow-sm border">
-        <div className="p-5 border-b">
-          <h2 className="font-semibold text-gray-800">Recent Expenses</h2>
-        </div>
-        <ExpenseList 
-          expenses={formattedExpenses} 
-          groupId={id}
-        />
-      </div>
+      <ExpenseListWithFilters
+        expenses={formattedExpenses}
+        settlements={formattedSettlements}
+        members={formattedMembers}
+        groupId={id}
+        currentUserId={session.userId}
+      />
     </div>
   )
 }

@@ -3,6 +3,10 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
+import { Button } from '@/components/ui/button'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Input } from '@/components/ui/input'
+import { Textarea } from '@/components/ui/textarea'
 
 export default function NewGroupPage() {
   const router = useRouter()
@@ -39,59 +43,54 @@ export default function NewGroupPage() {
   }
 
   return (
-    <div className="max-w-lg mx-auto">
+    <div className="mx-auto max-w-2xl">
       <div className="mb-6">
-        <Link href="/dashboard" className="text-blue-600 hover:text-blue-700 text-sm">
+        <Link href="/dashboard" className="text-sm font-medium text-[var(--accent)] hover:opacity-80">
           ← Back to Dashboard
         </Link>
       </div>
 
-      <div className="bg-white rounded-xl p-6 shadow-sm border">
-        <h1 className="text-2xl font-bold text-gray-800 mb-6">Create New Group</h1>
+      <Card>
+        <CardHeader>
+          <div className="eyebrow">New group</div>
+          <CardTitle className="text-3xl">Create a clean shared space</CardTitle>
+          <CardDescription>Name the group and give people enough context to know what belongs here.</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <form onSubmit={handleSubmit} className="space-y-5">
+            {error && (
+              <div className="rounded-xl border border-[var(--danger-border)] bg-[var(--danger-soft)] p-3 text-sm text-[var(--danger)]">
+                {error}
+              </div>
+            )}
 
-        <form onSubmit={handleSubmit} className="space-y-5">
-          {error && (
-            <div className="bg-red-50 text-red-600 p-3 rounded-lg text-sm">
-              {error}
+            <div>
+              <label className="mb-2 block text-sm font-medium text-[var(--foreground)]">Group Name *</label>
+              <Input
+                type="text"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                placeholder="e.g., Apartment Expenses, Trip to Goa"
+                required
+              />
             </div>
-          )}
 
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Group Name *
-            </label>
-            <input
-              type="text"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition"
-              placeholder="e.g., Apartment Expenses, Trip to Goa"
-              required
-            />
-          </div>
+            <div>
+              <label className="mb-2 block text-sm font-medium text-[var(--foreground)]">Description (optional)</label>
+              <Textarea
+                value={description}
+                onChange={(e) => setDescription(e.target.value)}
+                placeholder="What's this group for?"
+                rows={3}
+              />
+            </div>
 
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Description (optional)
-            </label>
-            <textarea
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition resize-none"
-              placeholder="What's this group for?"
-              rows={3}
-            />
-          </div>
-
-          <button
-            type="submit"
-            disabled={loading}
-            className="w-full bg-blue-600 text-white py-3 rounded-lg font-medium hover:bg-blue-700 transition disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            {loading ? 'Creating...' : 'Create Group'}
-          </button>
-        </form>
-      </div>
+            <Button type="submit" disabled={loading} className="w-full">
+              {loading ? 'Creating...' : 'Create Group'}
+            </Button>
+          </form>
+        </CardContent>
+      </Card>
     </div>
   )
 }
