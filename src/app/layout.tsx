@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from 'next'
 import localFont from 'next/font/local'
 import './globals.css'
+import { AnimatedFavicon } from '@/components/animated-favicon'
 
 const geistSans = localFont({
   src: './fonts/GeistVF.woff',
@@ -18,6 +19,7 @@ export const metadata: Metadata = {
   title: 'FairShare',
   description: 'Personal expenses + splits with friends',
   appleWebApp: { capable: true, title: 'FairShare', statusBarStyle: 'default' },
+  icons: { icon: [{ url: '/icon.gif', type: 'image/gif' }] },
 }
 
 export const viewport: Viewport = {
@@ -39,6 +41,7 @@ export default function RootLayout({
         <div className="min-h-screen bg-[radial-gradient(circle_at_top,rgba(255,255,255,0.66),transparent_30%),var(--background)]">
           {children}
         </div>
+        <AnimatedFavicon />
       </body>
     </html>
   )
