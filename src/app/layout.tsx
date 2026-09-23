@@ -19,7 +19,7 @@ export const metadata: Metadata = {
   title: 'FairShare',
   description: 'Personal expenses + splits with friends',
   appleWebApp: { capable: true, title: 'FairShare', statusBarStyle: 'default' },
-  icons: { icon: [{ url: '/icon.gif', type: 'image/gif' }] },
+  icons: { icon: [{ url: '/icon.gif', type: 'image/gif' }], apple: '/apple-icon.png' },
 }
 
 export const viewport: Viewport = {
