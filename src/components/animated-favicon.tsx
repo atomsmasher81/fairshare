@@ -2,7 +2,15 @@
 
 import { useEffect } from 'react'
 
-const FRAMES = 6
+// 32px PNG frames inlined as data URLs so swapping the icon never hits the network.
+const FRAMES = [
+  'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAYAAABzenr0AAAACXBIWXMAABYlAAAWJQFJUiTwAAABHklEQVR4nNWW2w2EIBBF7z81bBX8bUH2NLGl7eluMBpheCworkhyPkRkDuMowLzevBM8VsC1SwRcuy0DfrsiWGpeDJUBcwOoGgQcoqsAP9LE3wWwrrokkMoM6B7yiIpSTbwgDHD353leKAlsY/x70AIpAoEtsJWkwDY2WqkaswsIGKAFJCOQyUCpKOsEJKZFoIZQgGCAFmBCwEt/fwHGFDNgJSxCxkK6LxCwBH10cNd3pAb0iqsF7Iqe4MgrKPXvX4eQPlUCic+Q4q4lCh68nnVMUQApGmqguQgnS/ro4Etfw5/wtMCU4NdecGanhP5f6+BndsNtxc8/DxhvJ8td5/q6CZiLwL8D6kMvagf2Cq6P/Rg2A6ZjkKFqwIwm8AXmuIaKeK171AAAAABJRU5ErkJggg==',
+  'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAYAAABzenr0AAAACXBIWXMAABYlAAAWJQFJUiTwAAABI0lEQVR4nNWW3Q2DMAyE/Z4ZOkXeOhA7WazUna4ywiK/TkihQKSTWuP2PhtDQu71xpWiRwHIelwHZDUBZJ1lruveHXAXirqSiIZ0KAA+vEt/B6C1agug1BmC/KiQrHFRBsCIJNfneV5kAWhOeI1Co5oiADX2XATQ3KzSJGcDYMKi1FjjXAGodMAaShuA69oD0KMYAIRFqbHGUQAI2n8cAOoyO+A5HkLkQGksAvAg+IKpDzQyA2nFTQBvaPQWWPHt6WBAlJmu8UUdjyFYvnNmHt2eNacIQIlS4t4Z2D2EkwdE3QCNN+EwwGSotRf8slOSfkhNj9oNtepnnwfmShVhvFXpTwDuRFF0BjjpdNwFEK6jTaz/pNt0wJ1Y5V8A3NUdGAX4ArAghIy0zAD3AAAAAElFTkSuQmCC',
+  'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAYAAABzenr0AAAACXBIWXMAABYlAAAWJQFJUiTwAAABHElEQVR4nN2WUQ6EIAxE+88Z9hT87YG8E/FKe6duMOLCUCoq6CrJJFor8ygokHm9+UrR3wP49sgK+NYNIHSuPQ+NHlkBc4c1YLYAENEuNQXgj1MVTOP70kCaAxARj+M4SQMIOfEzylanN4skAjhOFAOE3GykkLPEGQwlJQDB2P6usfOS6gAcqARQqECNUgAnmILOBWCQBBCVHwGm3ysAYSwFYMEUpFbApl8BzrcUUwEsaBVAmQItvgBYwdQLX1ibAnY+5jLzZHrmHBWAfIeOdQDlM9y8CGk2VLVhDRwGGGyqDKDwJ9y7UREaSqrZjKT9oWqfGcAME44AhJLf/zxgep6IuPO5vwrAt9Yd1/ZJl1fAnDDKbgDm6gq0APgCY4567xgvyoIAAAAASUVORK5CYII=',
+  'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAYAAABzenr0AAAACXBIWXMAABYlAAAWJQFJUiTwAAABEklEQVR4nN2WWw6DIBBF5581dBX8dUHuaeKWuqdpaCSByzCCjyqSnKRV2nsYR4Xc6y1XQrcUCGO4CoRxmUA6eiXpERVwd+gBd6YAEW3iUAH5cBd/F6Bl1ZaAVhmKHyT8OMEUYMkI5+d5/mEJxDnpOcJgjUwgBntWBeLcYqUwpxRgYE2gUgGrKXUBVsKBHoEWdAEBLIGk/PsFRAkHzAp4zptQSiE8pgp4oFmg0gO44qqAV8KRrZfAOl4IUPijBFNAuQ2Fw3cuwrPLs8zJBAiCI2jc2gPdTUhL4ORzqgIrT8JugQmCNdbeBXvelBRD8LndI2C9DeOqx94PuKt3RO7EjSkdGd6yNUdRGq4CYdy2B9yIAl8gMXvyf8R1VAAAAABJRU5ErkJggg==',
+  'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAYAAABzenr0AAAACXBIWXMAABYlAAAWJQFJUiTwAAABE0lEQVR4nN2WTRKDIAxGs+cMPQW7Hqh3ynil3unrxJGRBETwp4qZeYsChUeMArnXG1dCtxGQeGQGJE4TkFjrD/HMDLgeasAdIUBEmzhUAF9u4u8CNO26JJDLDEH+FJFUsZl4hKGQ/mEYRkoCYUzcR1YghxIIC3vOCoSxyU7NmFmACQorwAsCCxkoFWWdAKe0CNSgBUBQWAFkBKL0Hy+AlGIGPOsiRCpk25SAByHGLi5tW2rA7rhawE/YCbY8glL7/HYwEFMlkHkNwfKbk8XV45nGFAUoR0MNNBfhxwMxdvGxreFLuFvgk2HtLNhzUpL9XtvF95yGYcf93wfc1Tcid+LllM6auPZ6Tl1kQKL7GnB3FfgBQnF98G2NNrMAAAAASUVORK5CYII=',
+  'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAYAAABzenr0AAAACXBIWXMAABYlAAAWJQFJUiTwAAABH0lEQVR4nOWWUQ7DIAiG/3fPsFP4tgP1TsQr7U4sNJpZRKtrm86M5E8apPAN7BTu8eQ7hb8GEBsGELutA7mdBYmpOuAuELqCgK90KgC/aEjzALAkN4KTX1QAEBdKbW8BWKNBXqimDUAq6j/Psh5CWNUCSDH5GpjAq3Th5KcKgPr1eXILQMeUAFTXKEBNNgBD/pHLwsnPBkDWfg3QIxuA62p2wNMxAM9gbxT1mUZGIKaBtM8E8A2NjEDP2/JtACAJiMui0b9q4DPUhXdHgLxQJv3C3h5gkjUqim/GE2M2AItnFnUDGBCHNuESAVraOwsOAbj4oIuOHEZHjmpMcR8IsXUtfy3mFAB3oXBl8p4LLK5K3HuFx892QGz6PeBmAHgDUCuB4ZhOVxYAAAAASUVORK5CYII=',
+]
 const DELAY_MS = 90
 
 // Only Firefox animates GIF favicons, so cycle PNG frames for Chrome/Edge too.
@@ -11,15 +19,12 @@ export function AnimatedFavicon() {
   useEffect(() => {
     if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return
 
-    const frames = Array.from({ length: FRAMES }, (_, i) => `/favicon-frames/${i}.png`)
-    frames.forEach((src) => { new Image().src = src })
-
     let i = 0
     const timer = window.setInterval(() => {
-      i = (i + 1) % FRAMES
+      i = (i + 1) % FRAMES.length
       document.querySelectorAll<HTMLLinkElement>('link[rel="icon"], link[rel="shortcut icon"]').forEach((link) => {
         link.type = 'image/png'
-        link.href = frames[i]
+        link.href = FRAMES[i]
       })
     }, DELAY_MS)
 
