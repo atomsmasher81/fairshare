@@ -15,6 +15,13 @@ model User {
   isAdmin      Boolean  @default(false)
   createdAt    DateTime @default(now())
 
+  // Frictionless capture
+  upiId            String?   // for "Pay via UPI" settle links
+  apiTokenHash     String?   @unique // personal token for Siri/Shortcuts (sha256)
+  defaultGroupId   String?   // where "milk 20" goes; null = personal
+  linkCode         String?   @unique // one-time Telegram link code
+  linkCodeExpires  DateTime?
+
   // Relations
   groupMemberships GroupMember[]
   expensesPaid     Expense[]       @relation("PaidBy")
@@ -24,6 +31,7 @@ model User {
   settlementsTo    Settlement[]    @relation("SettlementTo")
   activities       Activity[]
   telegramLink     TelegramLink?
+  payeeRules       PayeeRule[]
 }
 
 model TelegramLink {
@@ -44,6 +52,7 @@ model Group {
   createdById String
   createdAt   DateTime  @default(now())
   deletedAt   DateTime? // Soft delete
+  isPersonal  Boolean   @default(false) // hidden single-member ledger for personal expenses
 
   // Relations
   members     GroupMember[]
@@ -78,11 +87,35 @@ model Expense {
   updatedAt   DateTime  @updatedAt
   deletedAt   DateTime? // Soft delete
 
+  // Capture metadata
+  source      String    @default("web") // web | telegram | shortcut | sms
+  needsReview Boolean   @default(false) // auto-captured, not yet confirmed
+  payee       String?   // merchant / VPA from bank SMS
+  externalRef String?   // UPI ref no. for de-dupe
+  reviewMsgId String?   // Telegram message id of the review prompt
+
   // Relations
   group     Group          @relation(fields: [groupId], references: [id], onDelete: Cascade)
   paidBy    User           @relation("PaidBy", fields: [paidById], references: [id])
   createdBy User           @relation("CreatedBy", fields: [createdById], references: [id])
   splits    ExpenseSplit[]
+
+  @@index([externalRef])
+}
+
+// Remembers what a payee usually is ("SWIGGY" -> Food / "Swiggy")
+model PayeeRule {
+  id          String   @id @default(cuid())
+  userId      String
+  payeeKey    String
+  description String
+  category    String
+  groupId     String?
+  updatedAt   DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, payeeKey])
 }
 
 model ExpenseSplit {

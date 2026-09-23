@@ -2,6 +2,64 @@ function formatAmount(paise) {
   return `₹${(paise / 100).toFixed(2)}`;
 }
 
+async function telegramCall(method, payload) {
+  const token = process.env.TELEGRAM_BOT_TOKEN;
+  if (!token) return null;
+  try {
+    const res = await fetch(`https://api.telegram.org/bot${token}/${method}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    const json = await res.json().catch(() => null);
+    if (!res.ok || !json?.ok) {
+      console.error('Telegram call failed:', method, res.status, json?.description);
+      return null;
+    }
+    return json.result;
+  } catch (e) {
+    console.error('Telegram call error:', e);
+    return null;
+  }
+}
+
+function reviewKeyboard(expense, groups) {
+  const rows = [];
+  const row1 = [{ text: '🙋 Personal', callback_data: `rv:${expense.id}:p` }];
+  for (const g of groups.slice(0, 3)) row1.push({ text: `👥 ${g.name}`.slice(0, 30), callback_data: `rv:${expense.id}:${g.id}` });
+  rows.push(row1);
+  for (const g of groups.slice(3, 9)) rows.push([{ text: `👥 ${g.name}`.slice(0, 30), callback_data: `rv:${expense.id}:${g.id}` }]);
+  rows.push([{ text: '🗑 Not an expense', callback_data: `rv:${expense.id}:x` }]);
+  return { inline_keyboard: rows };
+}
+
+/** Ask the user where an auto-captured payment belongs. Reply to the message to rename it. */
+async function sendReviewPrompt({ prisma, userId, expense }) {
+  const link = await prisma.telegramLink.findUnique({ where: { userId }, select: { telegramId: true } });
+  if (!link?.telegramId) return { sent: false, reason: 'telegram_not_linked' };
+  const groups = await prisma.group.findMany({
+    where: { deletedAt: null, isPersonal: false, members: { some: { userId } } },
+    select: { id: true, name: true },
+    orderBy: { createdAt: 'asc' },
+  });
+  const text = [
+    `💸 ${formatAmount(expense.amount)} → ${expense.description}`,
+    `Saved as personal · ${expense.category}`,
+    '',
+    'Tap where it belongs. Reply to this message to rename it (e.g. "groceries").',
+  ].join('\n');
+  const msg = await telegramCall('sendMessage', {
+    chat_id: link.telegramId,
+    text,
+    reply_markup: reviewKeyboard(expense, groups),
+  });
+  if (msg?.message_id) {
+    await prisma.expense.update({ where: { id: expense.id }, data: { reviewMsgId: String(msg.message_id) } });
+    return { sent: true };
+  }
+  return { sent: false, reason: 'telegram_api_error' };
+}
+
 async function sendTelegramUserNotification({ prisma, userId, message }) {
   const token = process.env.TELEGRAM_BOT_TOKEN;
 
@@ -98,6 +156,9 @@ async function notifyExpenseSplitMembers({ prisma, expense, group, excludeUserId
 }
 
 module.exports = {
+  reviewKeyboard,
+  sendReviewPrompt,
+  telegramCall,
   formatExpenseParticipantMessage,
   notifyExpenseSplitMembers,
   resolveUserDisplayName,

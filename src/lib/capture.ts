@@ -1,0 +1,77 @@
+import { prisma } from '@/lib/prisma'
+/* eslint-disable @typescript-eslint/no-require-imports */
+const ledger = require('@/lib/ledger')
+const { notifyExpenseSplitMembers, sendTelegramUserNotification, sendReviewPrompt } = require('@/lib/telegram-notifications')
+const { parseBankMessage } = require('@/lib/parse')
+
+export interface CaptureInput {
+  userId: string
+  text?: string
+  sms?: string
+  groupId?: string
+  groupName?: string
+  category?: string
+  date?: string
+  source?: string
+  notifyTelegram?: boolean
+}
+
+export interface CaptureResult {
+  ok: boolean
+  status: number
+  message: string
+  skipped?: boolean
+  reason?: string
+  expense?: unknown
+}
+
+/**
+ * One entry point for every capture channel.
+ * - `sms` (or text that looks like a bank SMS) -> bank parser, dedupe, payee memory, review prompt
+ * - `text` -> quick parser ("milk 20 @flat")
+ */
+export async function capture(input: CaptureInput): Promise<CaptureResult> {
+  const { userId, groupId, groupName, category, source } = input
+  const notify = input.notifyTelegram !== false
+  const date = input.date ? new Date(input.date) : new Date()
+  if (Number.isNaN(date.getTime())) return { ok: false, status: 400, message: 'Invalid date' }
+
+  const raw = (input.sms || input.text || '').toString()
+  const looksLikeBank = !!input.sms || (raw.length > 40 && !!parseBankMessage(raw))
+
+  try {
+    if (looksLikeBank) {
+      const r = await ledger.addFromBankMessage(prisma, { userId, message: raw, source: source || 'sms', date })
+      if (r.skipped) {
+        return { ok: true, status: 200, skipped: true, reason: r.reason, message: r.reason === 'duplicate' ? 'Already recorded' : 'Not a payment — ignored' }
+      }
+      if (notify) {
+        if (r.known) await sendTelegramUserNotification({ prisma, userId, message: r.message })
+        else await sendReviewPrompt({ prisma, userId, expense: r.expense })
+        if (!r.expense.group.isPersonal) {
+          await notifyExpenseSplitMembers({ prisma, expense: r.expense, group: r.expense.group, excludeUserIds: [userId] })
+        }
+      }
+      return { ok: true, status: 200, message: r.known ? r.message : `📥 ${ledger.formatINR(r.expense.amount)} to ${r.expense.description} — saved, tap to sort`, expense: slim(r.expense) }
+    }
+
+    const r = await ledger.addFromText(prisma, { userId, text: raw, source: source || 'web', groupId, groupName, category, date })
+    if (notify && !r.expense.group.isPersonal) {
+      await notifyExpenseSplitMembers({ prisma, expense: r.expense, group: r.expense.group, excludeUserIds: [userId] })
+    }
+    return { ok: true, status: 200, message: r.message, expense: slim(r.expense) }
+  } catch (e: unknown) {
+    const err = e as { publicMessage?: string; status?: number }
+    if (err.publicMessage) return { ok: false, status: err.status || 400, message: err.publicMessage }
+    console.error('capture error', e)
+    return { ok: false, status: 500, message: 'Failed to save expense' }
+  }
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function slim(e: any) {
+  return {
+    id: e.id, description: e.description, amount: e.amount, category: e.category, date: e.date,
+    group: e.group?.isPersonal ? 'Personal' : e.group?.name, needsReview: e.needsReview,
+  }
+}

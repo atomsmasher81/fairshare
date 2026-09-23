@@ -149,7 +149,8 @@ export default function EditExpensePage() {
         return
       }
 
-      router.push(`/groups/${groupId}`)
+      router.back()
+      router.refresh()
       router.refresh()
     } catch {
       setError('Something went wrong')
@@ -180,9 +181,9 @@ export default function EditExpensePage() {
   return (
     <div className="max-w-lg mx-auto">
       <div className="mb-6">
-        <Link href={`/groups/${groupId}`} className="text-blue-600 hover:text-blue-700 text-sm">
-          ← Back to {expense.group.name}
-        </Link>
+        <button type="button" onClick={() => router.back()} className="text-[var(--accent)] text-sm">
+          ← Back
+        </button>
       </div>
 
       <div className="bg-white rounded-xl p-6 shadow-sm border">

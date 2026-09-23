@@ -20,7 +20,7 @@ export async function POST(
       where: { inviteCode: code.toUpperCase() },
     })
 
-    if (!group) {
+    if (!group || group.isPersonal || group.deletedAt) {
       return NextResponse.json({ error: 'Invalid invite code' }, { status: 404 })
     }
 

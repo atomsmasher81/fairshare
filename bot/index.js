@@ -1,22 +1,16 @@
 require('dotenv').config({ path: require('path').join(__dirname, '..', '.env') });
-const { Bot, InlineKeyboard, session } = require('grammy');
+const { Bot, InlineKeyboard } = require('grammy');
 const { PrismaClient } = require('@prisma/client');
-const {
-  QuickExpenseError,
-  createQuickExpenseFromText,
-  formatAmount,
-} = require('../src/lib/quick-expense');
-const { notifyExpenseSplitMembers } = require('../src/lib/telegram-notifications');
+const bcrypt = require('bcryptjs');
+const ledger = require('../src/lib/ledger');
+const { parseBankMessage } = require('../src/lib/parse');
+const { notifyExpenseSplitMembers, sendReviewPrompt } = require('../src/lib/telegram-notifications');
 
 const prisma = new PrismaClient();
 const bot = new Bot(process.env.TELEGRAM_BOT_TOKEN);
+const APP = 'https://split.kartikgautam.com';
+const { formatINR } = ledger;
 
-// Session middleware to store user context (selected group)
-bot.use(session({
-  initial: () => ({ groupId: null, groupName: null }),
-}));
-
-// Helper: Get or create user link between Telegram and FairShare
 async function getLinkedUser(telegramId) {
   const link = await prisma.telegramLink.findUnique({
     where: { telegramId: String(telegramId) },
@@ -25,318 +19,255 @@ async function getLinkedUser(telegramId) {
   return link?.user || null;
 }
 
-// Helper: Link Telegram to FairShare user
-async function linkUser(telegramId, telegramUsername, userId) {
+async function linkUser(ctx, userId) {
   await prisma.telegramLink.upsert({
-    where: { telegramId: String(telegramId) },
-    update: { userId, telegramUsername },
-    create: { telegramId: String(telegramId), telegramUsername, userId },
+    where: { telegramId: String(ctx.from.id) },
+    update: { userId, telegramUsername: ctx.from.username },
+    create: { telegramId: String(ctx.from.id), telegramUsername: ctx.from.username, userId },
   });
 }
 
-// /start command
+async function requireUser(ctx) {
+  const user = await getLinkedUser(ctx.from.id);
+  if (!user) {
+    await ctx.reply(`🔗 Link your account first: open ${APP}/settings and tap “Connect Telegram”.`);
+    return null;
+  }
+  return user;
+}
+
+async function defaultLabel(user) {
+  if (!user.defaultGroupId) return 'Personal';
+  const g = await prisma.group.findFirst({ where: { id: user.defaultGroupId, deletedAt: null } });
+  return g ? g.name : 'Personal';
+}
+
+const HELP = (defaultName) =>
+  `*How to add*\n` +
+  `\`milk 20\` → goes to *${defaultName}* (your default)\n` +
+  `\`dinner 1200 @flat\` → split in a group\n` +
+  `\`uber 240 #me\` → personal only\n` +
+  `Forward/paste a bank SMS → auto-read, you pick where it goes\n\n` +
+  `*Commands*\n` +
+  `/balances – who owes whom\n` +
+  `/today – today's spend  ·  /month – this month\n` +
+  `/review – unsorted auto-captured payments\n` +
+  `/undo – delete the last thing you added\n` +
+  `/default – change where plain entries go`;
+
 bot.command('start', async (ctx) => {
-  const user = await getLinkedUser(ctx.from.id);
-  
-  if (user) {
-    await ctx.reply(
-      `👋 Welcome back, ${user.displayName}!\n\n` +
-      `Commands:\n` +
-      `/setgroup - Select active group\n` +
-      `/summary - This month's summary\n` +
-      `/groups - List your groups\n` +
-      `/balance - Your balance in current group\n\n` +
-      `Quick add expense: Just type like\n` +
-      `\`milk 20\` or \`dinner 450\``,
-      { parse_mode: 'Markdown' }
-    );
-  } else {
-    await ctx.reply(
-      `👋 Welcome to FairShare Bot!\n\n` +
-      `First, link your FairShare account.\n` +
-      `Use: /link <username> <password>\n\n` +
-      `Don't have an account? Create one at:\n` +
-      `https://split.kartikgautam.com/register`
-    );
+  const code = (ctx.match || '').trim();
+  if (code) {
+    const user = await prisma.user.findFirst({ where: { linkCode: code, linkCodeExpires: { gt: new Date() } } });
+    if (!user) return ctx.reply('❌ That link has expired. Generate a new one in Settings.');
+    await linkUser(ctx, user.id);
+    await prisma.user.update({ where: { id: user.id }, data: { linkCode: null, linkCodeExpires: null } });
+    return ctx.reply(`✅ Linked to *${user.displayName}*!\n\n${HELP(await defaultLabel(user))}`, { parse_mode: 'Markdown' });
   }
+  const user = await getLinkedUser(ctx.from.id);
+  if (!user) {
+    return ctx.reply(`👋 Welcome to FairShare!\n\nOpen ${APP}/settings and tap “Connect Telegram” — one tap, no passwords here.`);
+  }
+  return ctx.reply(`👋 Hey ${user.displayName}!\n\n${HELP(await defaultLabel(user))}`, { parse_mode: 'Markdown' });
 });
 
-// /help command
 bot.command('help', async (ctx) => {
-  await ctx.reply(
-    `📖 *FairShare Bot Commands*\n\n` +
-    `/link <user> <pass> - Link your account\n` +
-    `/setgroup - Select active group\n` +
-    `/groups - List your groups\n` +
-    `/summary - This month's summary\n` +
-    `/balance - Your balance\n` +
-    `/settle - Show who owes whom\n\n` +
-    `*Quick expense:*\n` +
-    `\`milk 20\` - Add ₹20 expense for milk\n` +
-    `\`dinner 450\` - Add ₹450 for dinner\n\n` +
-    `Expenses are split equally among all group members.`,
-    { parse_mode: 'Markdown' }
-  );
+  const user = await getLinkedUser(ctx.from.id);
+  return ctx.reply(HELP(user ? await defaultLabel(user) : 'Personal'), { parse_mode: 'Markdown' });
 });
 
-// /link command - Link Telegram to FairShare account
+// Legacy: /link <username> <password>
 bot.command('link', async (ctx) => {
-  const args = ctx.message.text.split(' ').slice(1);
-  
-  if (args.length < 2) {
-    await ctx.reply('Usage: /link <username> <password>');
-    return;
-  }
-  
-  const [username, password] = args;
-  const bcrypt = require('bcryptjs');
-  
-  const user = await prisma.user.findUnique({
-    where: { username: username.toLowerCase() },
-  });
-  
-  if (!user) {
-    await ctx.reply('❌ User not found. Check your username.');
-    return;
-  }
-  
-  const valid = await bcrypt.compare(password, user.passwordHash);
-  if (!valid) {
-    await ctx.reply('❌ Invalid password.');
-    return;
-  }
-  
-  await linkUser(ctx.from.id, ctx.from.username, user.id);
-  
-  // Delete the message containing password for security
-  try {
-    await ctx.deleteMessage();
-  } catch (e) {
-    // May fail if bot doesn't have delete permission
-  }
-  
-  await ctx.reply(
-    `✅ Linked to *${user.displayName}*!\n\n` +
-    `Now use /setgroup to pick a group.`,
-    { parse_mode: 'Markdown' }
-  );
+  const [username, password] = (ctx.match || '').split(/\s+/);
+  try { await ctx.deleteMessage(); } catch (e) { /* ignore */ }
+  if (!username || !password) return ctx.reply(`Use the one-tap link in ${APP}/settings instead.`);
+  const user = await prisma.user.findUnique({ where: { username: username.toLowerCase() } });
+  if (!user || !(await bcrypt.compare(password, user.passwordHash))) return ctx.reply('❌ Invalid username or password.');
+  await linkUser(ctx, user.id);
+  return ctx.reply(`✅ Linked to *${user.displayName}*!`, { parse_mode: 'Markdown' });
 });
 
-// /groups command - List user's groups
+async function sendDefaultPicker(ctx, user) {
+  const groups = await ledger.listSharedGroups(prisma, user.id);
+  const kb = new InlineKeyboard().text(`${user.defaultGroupId ? '' : '✓ '}🙋 Personal`, 'def:p').row();
+  groups.forEach((g) => kb.text(`${user.defaultGroupId === g.id ? '✓ ' : ''}👥 ${g.name}`, `def:${g.id}`).row());
+  return ctx.reply('Where should plain entries like `milk 20` go?', { reply_markup: kb, parse_mode: 'Markdown' });
+}
+bot.command(['default', 'setgroup'], async (ctx) => {
+  const user = await requireUser(ctx);
+  if (user) await sendDefaultPicker(ctx, user);
+});
+bot.callbackQuery(/^def:(.+)$/, async (ctx) => {
+  const user = await getLinkedUser(ctx.from.id);
+  if (!user) return ctx.answerCallbackQuery();
+  const id = ctx.match[1] === 'p' ? null : ctx.match[1];
+  let name = 'Personal';
+  if (id) {
+    const g = await prisma.group.findFirst({ where: { id, deletedAt: null, members: { some: { userId: user.id } } } });
+    if (!g) return ctx.answerCallbackQuery({ text: 'Group not found' });
+    name = g.name;
+  }
+  await prisma.user.update({ where: { id: user.id }, data: { defaultGroupId: id } });
+  await ctx.answerCallbackQuery({ text: `Default: ${name}` });
+  return ctx.editMessageText(`✅ Plain entries now go to *${name}*.\nOverride anytime with \`@group\` or \`#me\`.`, { parse_mode: 'Markdown' });
+});
+
 bot.command('groups', async (ctx) => {
-  const user = await getLinkedUser(ctx.from.id);
-  if (!user) {
-    await ctx.reply('❌ Link your account first with /link');
-    return;
-  }
-  
-  const groups = await prisma.group.findMany({
-    where: { 
-      members: { some: { userId: user.id } },
-      deletedAt: null,
-    },
-    include: { _count: { select: { members: true } } },
-  });
-  
-  if (groups.length === 0) {
-    await ctx.reply('You\'re not in any groups yet.\nCreate one at https://split.kartikgautam.com');
-    return;
-  }
-  
-  const list = groups.map(g => `• *${g.name}* (${g._count.members} members)`).join('\n');
-  await ctx.reply(`📂 *Your Groups:*\n\n${list}`, { parse_mode: 'Markdown' });
+  const user = await requireUser(ctx);
+  if (!user) return;
+  const groups = await ledger.listSharedGroups(prisma, user.id);
+  if (!groups.length) return ctx.reply(`No groups yet. Create one at ${APP}`);
+  const list = groups.map((g) => `• ${g.name} — tag: @${g.name.toLowerCase().replace(/\s+/g, '')}`).join('\n');
+  return ctx.reply(`👥 Your groups\n\n${list}\n\nPersonal: #me`);
 });
 
-// /setgroup command - Select active group
-bot.command('setgroup', async (ctx) => {
-  const user = await getLinkedUser(ctx.from.id);
-  if (!user) {
-    await ctx.reply('❌ Link your account first with /link');
-    return;
-  }
-  
-  const groups = await prisma.group.findMany({
-    where: { 
-      members: { some: { userId: user.id } },
-      deletedAt: null,
-    },
-  });
-  
-  if (groups.length === 0) {
-    await ctx.reply('You\'re not in any groups yet.');
-    return;
-  }
-  
-  const keyboard = new InlineKeyboard();
-  groups.forEach(g => {
-    keyboard.text(g.name, `setgroup:${g.id}`).row();
-  });
-  
-  await ctx.reply('Select a group:', { reply_markup: keyboard });
+bot.command(['balances', 'balance', 'settle'], async (ctx) => {
+  const user = await requireUser(ctx);
+  if (!user) return;
+  const friends = (await ledger.friendBalances(prisma, user.id)).filter((f) => f.net !== 0);
+  if (!friends.length) return ctx.reply('✅ All settled up with everyone.');
+  const lines = friends.map((f) =>
+    f.net > 0 ? `🟢 ${f.user.displayName} owes you ${formatINR(f.net)}` : `🔴 You owe ${f.user.displayName} ${formatINR(-f.net)}`);
+  return ctx.reply(`${lines.join('\n')}\n\nSettle: ${APP}/friends`);
 });
 
-// Handle group selection callback
-bot.callbackQuery(/^setgroup:(.+)$/, async (ctx) => {
-  const groupId = ctx.match[1];
-  const user = await getLinkedUser(ctx.from.id);
-  
-  const group = await prisma.group.findUnique({ where: { id: groupId, deletedAt: null } });
-  if (!group) {
-    await ctx.answerCallbackQuery({ text: 'Group not found or deleted' });
-    return;
-  }
-  
-  ctx.session.groupId = groupId;
-  ctx.session.groupName = group.name;
-  
-  await ctx.answerCallbackQuery({ text: `Selected: ${group.name}` });
-  await ctx.editMessageText(`✅ Active group: *${group.name}*\n\nNow just type expenses like \`chai 40\``, { parse_mode: 'Markdown' });
+async function spendReply(ctx, from, to, label) {
+  const user = await requireUser(ctx);
+  if (!user) return;
+  const { items, total, byCategory } = await ledger.mySpending(prisma, user.id, from, to);
+  if (!items.length) return ctx.reply(`Nothing spent ${label}. 🎉`);
+  const cats = Object.entries(byCategory).sort((a, b) => b[1] - a[1]).map(([c, v]) => `${c} ${formatINR(v)}`).join(' · ');
+  const recent = items.slice(0, 8).map((i) => `• ${i.description} ${formatINR(i.share)}${i.group.isPersonal ? '' : ` (${i.group.name})`}`).join('\n');
+  return ctx.reply(`💰 ${label}: ${formatINR(total)}\n${cats}\n\n${recent}${items.length > 8 ? `\n…and ${items.length - 8} more` : ''}`);
+}
+function istMidnight(daysAgo = 0) {
+  const now = new Date(Date.now() + 5.5 * 3600e3);
+  const d = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() - daysAgo);
+  return new Date(d - 5.5 * 3600e3);
+}
+bot.command('today', (ctx) => spendReply(ctx, istMidnight(0), new Date(Date.now() + 60e3), 'Today'));
+bot.command(['month', 'summary'], (ctx) => {
+  const now = new Date(Date.now() + 5.5 * 3600e3);
+  const from = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1) - 5.5 * 3600e3);
+  return spendReply(ctx, from, new Date(Date.now() + 60e3), now.toLocaleString('en-IN', { month: 'long', timeZone: 'UTC' }));
 });
 
-// /summary command - Show current month summary
-bot.command('summary', async (ctx) => {
-  const user = await getLinkedUser(ctx.from.id);
-  if (!user) {
-    await ctx.reply('❌ Link your account first with /link');
-    return;
-  }
-  
-  if (!ctx.session.groupId) {
-    await ctx.reply('❌ No group selected. Use /setgroup first.');
-    return;
-  }
-  
-  const now = new Date();
-  const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
-  
-  const expenses = await prisma.expense.findMany({
-    where: {
-      groupId: ctx.session.groupId,
-      date: { gte: startOfMonth },
-      deletedAt: null,
-    },
-    include: { paidBy: true },
+bot.command('undo', async (ctx) => {
+  const user = await requireUser(ctx);
+  if (!user) return;
+  const last = await ledger.undoLast(prisma, user.id);
+  return ctx.reply(last ? `↩️ Deleted: ${last.description} ${formatINR(last.amount)}` : 'Nothing to undo (last 24h).');
+});
+
+bot.command('review', async (ctx) => {
+  const user = await requireUser(ctx);
+  if (!user) return;
+  const pending = await prisma.expense.findMany({
+    where: { createdById: user.id, needsReview: true, deletedAt: null },
     orderBy: { date: 'desc' },
+    take: 10,
   });
-  
-  const total = expenses.reduce((sum, e) => sum + e.amount, 0);
-  const byCategory = {};
-  expenses.forEach(e => {
-    byCategory[e.category] = (byCategory[e.category] || 0) + e.amount;
-  });
-  
-  let msg = `📊 *${ctx.session.groupName}* - ${now.toLocaleString('en-US', { month: 'long', year: 'numeric' })}\n\n`;
-  msg += `*Total:* ${formatAmount(total)}\n`;
-  msg += `*Expenses:* ${expenses.length}\n\n`;
-  
-  if (Object.keys(byCategory).length > 0) {
-    msg += `*By category:*\n`;
-    for (const [cat, amt] of Object.entries(byCategory)) {
-      msg += `• ${cat}: ${formatAmount(amt)}\n`;
-    }
-  }
-  
-  await ctx.reply(msg, { parse_mode: 'Markdown' });
+  if (!pending.length) return ctx.reply('✅ Nothing to review.');
+  for (const e of pending.reverse()) await sendReviewPrompt({ prisma, userId: user.id, expense: e });
 });
 
-// /balance command - Show user's balance in current group
-bot.command('balance', async (ctx) => {
+// Review buttons: rv:<expenseId>:<p|x|groupId>
+bot.callbackQuery(/^rv:([^:]+):(.+)$/, async (ctx) => {
   const user = await getLinkedUser(ctx.from.id);
-  if (!user) {
-    await ctx.reply('❌ Link your account first with /link');
-    return;
+  if (!user) return ctx.answerCallbackQuery();
+  const [, expenseId, target] = ctx.match;
+  try {
+    if (target === 'x') {
+      await prisma.expense.updateMany({ where: { id: expenseId, createdById: user.id }, data: { deletedAt: new Date(), needsReview: false } });
+      await ctx.answerCallbackQuery({ text: 'Removed' });
+      return ctx.editMessageText('🗑 Removed — not an expense.');
+    }
+    const updated = await ledger.moveExpense(prisma, { expenseId, userId: user.id, groupId: target === 'p' ? null : target });
+    await ctx.answerCallbackQuery({ text: 'Saved' });
+    await ctx.editMessageText(`${ledger.describeExpense(updated)}\n(remembered for next time)`);
+    if (!updated.group.isPersonal) {
+      await notifyExpenseSplitMembers({ prisma, expense: updated, group: updated.group, excludeUserIds: [user.id] });
+    }
+  } catch (e) {
+    console.error('review callback', e);
+    return ctx.answerCallbackQuery({ text: e.publicMessage || 'Failed' });
   }
-  
-  if (!ctx.session.groupId) {
-    await ctx.reply('❌ No group selected. Use /setgroup first.');
-    return;
-  }
-  
-  // Calculate balance
-  const expenses = await prisma.expense.findMany({
-    where: { groupId: ctx.session.groupId, deletedAt: null },
-    include: { splits: true },
-  });
-  
-  const settlements = await prisma.settlement.findMany({
-    where: { groupId: ctx.session.groupId },
-  });
-  
-  let balance = 0;
-  expenses.forEach(e => {
-    if (e.paidById === user.id) balance += e.amount;
-    e.splits.forEach(s => {
-      if (s.userId === user.id) balance -= s.amount;
-    });
-  });
-  
-  settlements.forEach(s => {
-    if (s.fromUserId === user.id) balance += s.amount;
-    if (s.toUserId === user.id) balance -= s.amount;
-  });
-  
-  const status = balance > 0 
-    ? `You are owed ${formatAmount(balance)} 💚`
-    : balance < 0 
-      ? `You owe ${formatAmount(Math.abs(balance))} 🔴`
-      : `All settled up! ✅`;
-  
-  await ctx.reply(
-    `💰 *Your balance in ${ctx.session.groupName}:*\n\n${status}`,
-    { parse_mode: 'Markdown' }
-  );
 });
 
-// Handle plain text messages as quick expenses
 bot.on('message:text', async (ctx) => {
   const text = ctx.message.text.trim();
-  
-  // Skip if it's a command
   if (text.startsWith('/')) return;
-  
-  const user = await getLinkedUser(ctx.from.id);
-  if (!user) {
-    await ctx.reply('❌ Link your account first with /link <username> <password>');
-    return;
-  }
-  
-  if (!ctx.session.groupId) {
-    await ctx.reply('❌ No group selected. Use /setgroup first.');
-    return;
+  const user = await requireUser(ctx);
+  if (!user) return;
+
+  // Reply to a review prompt / confirmation = rename (optionally "name 250" or "name @flat")
+  const replyTo = ctx.message.reply_to_message?.message_id;
+  if (replyTo) {
+    const exp = await prisma.expense.findFirst({ where: { reviewMsgId: String(replyTo), createdById: user.id, deletedAt: null } });
+    if (exp) {
+      const tag = (text.match(/[@#]([\w.-]+)/) || [])[1];
+      const name = text.replace(/[@#][\w.-]+/g, '').trim();
+      let groupId = exp.groupId;
+      if (tag) {
+        const g = await ledger.resolveTarget(prisma, { userId: user.id, tag: tag.toLowerCase() }).catch(() => null);
+        if (g) groupId = g.isPersonal ? null : g.id;
+      } else {
+        const g = await prisma.group.findUnique({ where: { id: exp.groupId } });
+        groupId = g?.isPersonal ? null : exp.groupId;
+      }
+      const { guessCategory } = require('../src/lib/parse');
+      const updated = await ledger.moveExpense(prisma, {
+        expenseId: exp.id, userId: user.id, groupId,
+        description: name || exp.description,
+        category: name ? guessCategory(name) : undefined,
+      });
+      return ctx.reply(`${ledger.describeExpense(updated)}\n(remembered for next time)`);
+    }
   }
 
   try {
-    const result = await createQuickExpenseFromText({
-      prisma,
-      userId: user.id,
-      groupId: ctx.session.groupId,
-      text,
-      source: 'telegram',
-    });
-
-    ctx.session.groupName = result.group.name;
-    await ctx.reply(result.message);
-    await notifyExpenseSplitMembers({
-      prisma,
-      expense: result.expense,
-      group: result.group,
-      excludeUserIds: [user.id],
-    });
-  } catch (error) {
-    if (error instanceof QuickExpenseError) {
-      if (error.code === 'GROUP_NOT_FOUND') {
-        ctx.session.groupId = null;
-        ctx.session.groupName = null;
-      }
-      await ctx.reply(`❌ ${error.publicMessage}`);
-      return;
+    // Pasted / forwarded bank SMS
+    if (text.length > 40 && parseBankMessage(text)) {
+      const r = await ledger.addFromBankMessage(prisma, { userId: user.id, message: text, source: 'telegram-sms' });
+      if (r.skipped) return ctx.reply(r.reason === 'duplicate' ? '👌 Already recorded.' : 'Not a payment — ignored.');
+      if (!r.known) return sendReviewPrompt({ prisma, userId: user.id, expense: r.expense });
+      return ctx.reply(r.message);
     }
 
+    const r = await ledger.addFromText(prisma, { userId: user.id, text, source: 'telegram' });
+    const sent = await ctx.reply(r.message, {
+      reply_markup: new InlineKeyboard().text('↩️ Undo', `undo:${r.expense.id}`),
+    });
+    await prisma.expense.update({ where: { id: r.expense.id }, data: { reviewMsgId: String(sent.message_id) } });
+    if (!r.expense.group.isPersonal) {
+      await notifyExpenseSplitMembers({ prisma, expense: r.expense, group: r.expense.group, excludeUserIds: [user.id] });
+    }
+  } catch (error) {
+    if (error.publicMessage) return ctx.reply(`❌ ${error.publicMessage}`);
     console.error('Telegram quick expense error:', error);
-    await ctx.reply('❌ Failed to add expense. Please try again.');
+    return ctx.reply('❌ Failed to add expense. Please try again.');
   }
 });
 
-// Start the bot
+bot.callbackQuery(/^undo:(.+)$/, async (ctx) => {
+  const user = await getLinkedUser(ctx.from.id);
+  if (!user) return ctx.answerCallbackQuery();
+  const r = await prisma.expense.updateMany({ where: { id: ctx.match[1], createdById: user.id, deletedAt: null }, data: { deletedAt: new Date() } });
+  await ctx.answerCallbackQuery({ text: r.count ? 'Undone' : 'Already gone' });
+  if (r.count) await ctx.editMessageText('↩️ Undone.');
+});
+
+bot.catch((err) => console.error('Bot error:', err.error || err));
+
+bot.api.setMyCommands([
+  { command: 'balances', description: 'Who owes whom' },
+  { command: 'today', description: "Today's spend" },
+  { command: 'month', description: "This month's spend" },
+  { command: 'review', description: 'Sort auto-captured payments' },
+  { command: 'undo', description: 'Delete last entry' },
+  { command: 'default', description: 'Where plain entries go' },
+  { command: 'help', description: 'How to use' },
+]).catch(() => {});
+
 bot.start();
 console.log('🤖 FairShare Bot is running!');

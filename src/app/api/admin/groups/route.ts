@@ -13,7 +13,7 @@ export async function GET(request: NextRequest) {
     const includeDeleted = searchParams.get('includeDeleted') === 'true'
 
     const groups = await prisma.group.findMany({
-      where: includeDeleted ? {} : { deletedAt: null },
+      where: includeDeleted ? { isPersonal: false } : { deletedAt: null, isPersonal: false },
       orderBy: { createdAt: 'desc' },
       include: {
         _count: { select: { members: true, expenses: true } },

@@ -56,6 +56,7 @@ export const EXPENSE_CATEGORIES = [
   { value: 'entertainment', label: '🎬 Entertainment' },
   { value: 'shopping', label: '🛒 Shopping' },
   { value: 'rent', label: '🏠 Rent' },
+  { value: 'health', label: '💊 Health' },
   { value: 'other', label: '📦 Other' },
 ]
 

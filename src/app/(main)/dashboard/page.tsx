@@ -1,162 +1,133 @@
+import { redirect } from 'next/navigation'
 import Link from 'next/link'
 import { prisma } from '@/lib/prisma'
 import { getSession } from '@/lib/auth'
-import { formatAmount } from '@/lib/utils'
-import { Prisma } from '@prisma/client'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { Button } from '@/components/ui/button'
+import { formatAmount, getCategoryLabel } from '@/lib/utils'
+import { QuickAdd } from '@/components/quick-add'
+import { ReviewInbox } from '@/components/review-inbox'
+import { getLedgerOptions, getRecentDescriptions, istMonthRange, ledger } from '@/lib/server-data'
 
-type GroupWithDetails = Prisma.GroupGetPayload<{
-  include: {
-    members: {
-      include: {
-        user: { select: { id: true; displayName: true } }
-      }
-    }
-    expenses: {
-      include: { splits: true }
-    }
-    settlements: true
-    _count: { select: { expenses: true } }
-  }
-}>
+export const dynamic = 'force-dynamic'
 
-export default async function DashboardPage() {
+export default async function HomePage() {
   const session = await getSession()
-  const userId = session.userId!
+  if (!session.isLoggedIn || !session.userId) redirect('/login')
+  const userId = session.userId
+  const { from, to, label } = istMonthRange(0)
 
-  const groups: GroupWithDetails[] = await prisma.group.findMany({
-    where: {
-      members: { some: { userId } },
-      deletedAt: null,
-    },
-    include: {
-      members: {
-        include: {
-          user: { select: { id: true, displayName: true } },
-        },
-      },
-      expenses: {
-        where: { deletedAt: null },
-        include: { splits: true },
-      },
-      settlements: true,
-      _count: { select: { expenses: { where: { deletedAt: null } } } },
-    },
-    orderBy: { createdAt: 'desc' },
-  })
+  const [{ ledgers, defaultId }, recent, spend, friends, pending, groups] = await Promise.all([
+    getLedgerOptions(userId),
+    getRecentDescriptions(userId),
+    ledger.mySpending(prisma, userId, from, to),
+    ledger.friendBalances(prisma, userId),
+    prisma.expense.findMany({
+      where: { createdById: userId, needsReview: true, deletedAt: null },
+      orderBy: { date: 'desc' },
+      take: 20,
+      select: { id: true, description: true, amount: true, date: true, payee: true },
+    }),
+    ledger.listSharedGroups(prisma, userId),
+  ])
 
-  let totalOwed = 0
-  let totalOwing = 0
-
-  for (const group of groups) {
-    let netBalance = 0
-
-    for (const expense of group.expenses) {
-      if (expense.paidById === userId) {
-        netBalance += expense.amount
-      }
-      for (const split of expense.splits) {
-        if (split.userId === userId) {
-          netBalance -= split.amount
-        }
-      }
-    }
-
-    for (const settlement of group.settlements) {
-      if (settlement.fromUserId === userId) {
-        netBalance += settlement.amount
-      }
-      if (settlement.toUserId === userId) {
-        netBalance -= settlement.amount
-      }
-    }
-
-    if (netBalance > 0) {
-      totalOwed += netBalance
-    } else {
-      totalOwing += Math.abs(netBalance)
-    }
-  }
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const owedToYou = friends.filter((f: any) => f.net > 0).reduce((a: number, f: any) => a + f.net, 0)
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const youOwe = friends.filter((f: any) => f.net < 0).reduce((a: number, f: any) => a - f.net, 0)
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const open = friends.filter((f: any) => f.net !== 0)
 
   return (
-    <div className="space-y-8">
-      <section className="grid gap-6 lg:grid-cols-[1.3fr_0.7fr] lg:items-start">
-        <Card className="bg-[linear-gradient(180deg,rgba(255,255,255,0.58),rgba(255,255,255,0.24))]">
-          <CardHeader>
-            <div className="eyebrow">Overview</div>
-            <CardTitle className="text-4xl">Your group balances, at a glance.</CardTitle>
-            <CardDescription className="max-w-2xl text-base">
-              Keep spending, settlements, and active groups in one clean workspace.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="grid gap-4 md:grid-cols-2">
-            <div className="rounded-2xl border border-[var(--border)] bg-[rgba(255,255,255,0.5)] p-5">
-              <p className="mb-1 text-sm text-[var(--muted-foreground)]">You are owed</p>
-              <p className="text-3xl font-semibold text-[var(--success)]">{formatAmount(totalOwed)}</p>
-            </div>
-            <div className="rounded-2xl border border-[var(--border)] bg-[rgba(255,255,255,0.5)] p-5">
-              <p className="mb-1 text-sm text-[var(--muted-foreground)]">You owe</p>
-              <p className="text-3xl font-semibold text-[var(--danger)]">{formatAmount(totalOwing)}</p>
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <div className="eyebrow">Actions</div>
-            <CardTitle>Start something new</CardTitle>
-            <CardDescription>Create a fresh group or jump into an existing one.</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            <Link href="/groups/new" className="block">
-              <Button className="w-full justify-center">Create new group</Button>
-            </Link>
-            <div className="rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-4 text-sm text-[var(--muted-foreground)]">
-              {groups.length} active group{groups.length !== 1 ? 's' : ''} in your workspace
-            </div>
-          </CardContent>
-        </Card>
+    <div className="mx-auto max-w-2xl space-y-6">
+      <section className="rounded-3xl border border-[var(--border)] bg-[var(--card)] p-5 shadow-[var(--shadow-card)]">
+        <QuickAdd ledgers={ledgers} defaultId={defaultId} recent={recent} />
       </section>
 
-      <div>
-        <div className="mb-5 flex items-center justify-between">
-          <div>
-            <p className="eyebrow mb-2">Groups</p>
-            <h2 className="text-2xl font-semibold text-[var(--foreground)]">Your active spaces</h2>
-          </div>
-          <Link href="/groups/new" className="text-sm font-medium text-[var(--accent)] hover:opacity-80">
-            Create new →
-          </Link>
-        </div>
+      <ReviewInbox
+        items={pending.map((p) => ({ ...p, date: p.date.toISOString() }))}
+        ledgers={ledgers}
+      />
 
-        {groups.length === 0 ? (
-          <Card className="p-8 text-center">
-            <p className="mb-4 text-[var(--muted-foreground)]">You&apos;re not in any groups yet</p>
-            <Link href="/groups/new"><Button>Create your first group</Button></Link>
-          </Card>
-        ) : (
-          <div className="grid gap-4 md:grid-cols-2">
-            {groups.map((group: GroupWithDetails) => (
-              <Link
-                key={group.id}
-                href={`/groups/${group.id}`}
-                className="block rounded-2xl border border-[var(--border)] bg-[var(--card)] p-5 shadow-[var(--shadow-card)] transition hover:-translate-y-0.5 hover:border-[var(--border-strong)]"
-              >
-                <div className="flex items-center justify-between gap-4">
-                  <div>
-                    <p className="text-lg font-semibold text-[var(--foreground)]">{group.name}</p>
-                    <p className="mt-1 text-sm text-[var(--muted-foreground)]">
-                      {group.members.length} member{group.members.length !== 1 ? 's' : ''} · {group._count.expenses} expense{group._count.expenses !== 1 ? 's' : ''}
-                    </p>
-                  </div>
-                  <div className="rounded-full border border-[var(--border)] bg-[var(--surface)] px-3 py-1 text-xs font-medium text-[var(--muted-foreground)]">Open</div>
-                </div>
-              </Link>
-            ))}
+      <section className="grid grid-cols-3 gap-3">
+        <Link href="/spending" className="rounded-2xl border border-[var(--border)] bg-[var(--card)] p-4">
+          <p className="text-xs text-[var(--muted-foreground)]">{label.split(' ')[0]} spend</p>
+          <p className="mt-1 text-xl font-semibold tabular-nums">{formatAmount(spend.total)}</p>
+        </Link>
+        <Link href="/friends" className="rounded-2xl border border-[var(--border)] bg-[var(--card)] p-4">
+          <p className="text-xs text-[var(--muted-foreground)]">Owed to you</p>
+          <p className="mt-1 text-xl font-semibold tabular-nums text-[var(--success)]">{formatAmount(owedToYou)}</p>
+        </Link>
+        <Link href="/friends" className="rounded-2xl border border-[var(--border)] bg-[var(--card)] p-4">
+          <p className="text-xs text-[var(--muted-foreground)]">You owe</p>
+          <p className="mt-1 text-xl font-semibold tabular-nums text-[var(--danger)]">{formatAmount(youOwe)}</p>
+        </Link>
+      </section>
+
+      {open.length > 0 && (
+        <section className="rounded-2xl border border-[var(--border)] bg-[var(--card)] p-4">
+          <div className="mb-2 flex items-center justify-between">
+            <h2 className="font-semibold">Balances</h2>
+            <Link href="/friends" className="text-sm text-[var(--accent)]">Settle up →</Link>
           </div>
+          <ul className="divide-y divide-[var(--border)]">
+            {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
+            {open.map((f: any) => (
+              <li key={f.user.id} className="flex items-center justify-between py-2">
+                <span>{f.user.displayName}</span>
+                <span className={f.net > 0 ? 'text-[var(--success)]' : 'text-[var(--danger)]'}>
+                  {f.net > 0 ? `owes you ${formatAmount(f.net)}` : `you owe ${formatAmount(-f.net)}`}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+
+      <section className="rounded-2xl border border-[var(--border)] bg-[var(--card)] p-4">
+        <div className="mb-2 flex items-center justify-between">
+          <h2 className="font-semibold">Recent</h2>
+          <Link href="/spending" className="text-sm text-[var(--accent)]">All →</Link>
+        </div>
+        {spend.items.length === 0 ? (
+          <p className="py-4 text-center text-sm text-[var(--muted-foreground)]">Nothing this month yet. Type “chai 20” above.</p>
+        ) : (
+          <ul className="divide-y divide-[var(--border)]">
+            {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
+            {spend.items.slice(0, 10).map((i: any) => (
+              <li key={i.id} className="flex items-center justify-between gap-3 py-2">
+                <div className="min-w-0">
+                  <p className="truncate">{i.description}{i.needsReview && <span className="ml-1 text-xs text-[var(--accent)]">• unsorted</span>}</p>
+                  <p className="text-xs text-[var(--muted-foreground)]">
+                    {new Date(i.date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })} · {getCategoryLabel(i.category)}
+                    {!i.group.isPersonal && ` · ${i.group.name} (of ${formatAmount(i.amount)})`}
+                  </p>
+                </div>
+                <span className="shrink-0 tabular-nums">{formatAmount(i.share)}</span>
+              </li>
+            ))}
+          </ul>
         )}
-      </div>
+      </section>
+
+      <section>
+        <div className="mb-2 flex items-center justify-between">
+          <h2 className="font-semibold">Groups</h2>
+          <Link href="/groups/new" className="text-sm text-[var(--accent)]">+ New group</Link>
+        </div>
+        <div className="grid gap-2 sm:grid-cols-2">
+          {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
+          {groups.map((g: any) => (
+            <Link key={g.id} href={`/groups/${g.id}`} className="rounded-2xl border border-[var(--border)] bg-[var(--card)] p-4 hover:border-[var(--border-strong)]">
+              <p className="font-medium">{g.name}</p>
+              <p className="text-xs text-[var(--muted-foreground)]">{g.members.map((m: { user: { displayName: string } }) => m.user.displayName).join(', ')}</p>
+            </Link>
+          ))}
+          {groups.length === 0 && (
+            <Link href="/groups/new" className="rounded-2xl border border-dashed border-[var(--border-strong)] p-4 text-sm text-[var(--muted-foreground)]">
+              Create a group for your flat, a trip, or a friend →
+            </Link>
+          )}
+        </div>
+      </section>
     </div>
   )
 }

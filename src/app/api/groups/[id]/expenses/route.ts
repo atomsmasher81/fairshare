@@ -25,7 +25,7 @@ export async function GET(
     }
 
     const expenses = await prisma.expense.findMany({
-      where: { groupId },
+      where: { groupId, deletedAt: null },
       include: {
         paidBy: { select: { id: true, displayName: true } },
         createdBy: { select: { id: true, displayName: true } },

@@ -51,7 +51,7 @@ export async function GET(
 
     // Get all expenses
     const expenses = await prisma.expense.findMany({
-      where: { groupId },
+      where: { groupId, deletedAt: null },
       include: {
         splits: true,
       },

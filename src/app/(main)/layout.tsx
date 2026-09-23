@@ -19,7 +19,7 @@ export default async function MainLayout({
         username={session.username!} 
         isAdmin={session.isAdmin || false} 
       />
-      <main className="app-shell py-8 sm:py-10">
+      <main className="app-shell pb-28 pt-6 sm:pt-8 md:pb-12">
         {children}
       </main>
     </div>

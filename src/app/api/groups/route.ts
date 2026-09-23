@@ -15,6 +15,8 @@ export async function GET() {
         members: {
           some: { userId: session.userId },
         },
+        deletedAt: null,
+        isPersonal: false,
       },
       include: {
         members: {

@@ -5,7 +5,7 @@ import Link from 'next/link'
 export default async function AdminDashboard() {
   const [userCount, groupCount, expenseCount, totalAmount] = await Promise.all([
     prisma.user.count(),
-    prisma.group.count({ where: { deletedAt: null } }),
+    prisma.group.count({ where: { deletedAt: null, isPersonal: false } }),
     prisma.expense.count({ where: { deletedAt: null } }),
     prisma.expense.aggregate({
       where: { deletedAt: null },
@@ -20,7 +20,7 @@ export default async function AdminDashboard() {
   })
 
   const recentGroups = await prisma.group.findMany({
-    where: { deletedAt: null },
+    where: { deletedAt: null, isPersonal: false },
     take: 5,
     orderBy: { createdAt: 'desc' },
     include: { _count: { select: { members: true, expenses: true } } },
