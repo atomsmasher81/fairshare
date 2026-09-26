@@ -49,7 +49,7 @@ export async function DELETE(_req: NextRequest, { params }: Ctx) {
   if (!userId) return unauthorized()
   const existing = await findForUser((await params).id, userId)
   if (!existing) return NextResponse.json({ error: 'Expense not found' }, { status: 404 })
-  await prisma.expense.update({ where: { id: existing.id }, data: { deletedAt: new Date() } })
+  await prisma.expense.update({ where: { id: existing.id }, data: { deletedAt: new Date(), deletedById: userId } })
   await prisma.activity.create({
     data: { groupId: existing.groupId, userId, type: 'expense_deleted', metadata: JSON.stringify({ expenseId: existing.id, description: existing.description, amount: existing.amount }) },
   })

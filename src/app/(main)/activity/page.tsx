@@ -1,6 +1,7 @@
 import Link from 'next/link'
 import { ChevronLeft, ChevronRight, X } from 'lucide-react'
-import { entriesFor, monthRange, requireUserId, summarize, type Entry } from '@/lib/queries'
+import { entriesFor, monthRange, requireUserId, summarize, timeline, type Entry } from '@/lib/queries'
+import { Timeline } from '@/components/timeline'
 import { inr, dayLabel, istDay, NEEDS, NEED_META, categoryMeta, type Need } from '@/lib/format'
 import { EntryRow } from '@/components/entry-row'
 import { EmptyState } from '@/components/kit'
@@ -9,17 +10,18 @@ import { cn } from '@/lib/utils'
 export const dynamic = 'force-dynamic'
 export const metadata = { title: 'Activity' }
 
-type SP = { m?: string; view?: string; scope?: string; need?: string; cat?: string; method?: string }
+type SP = { m?: string; view?: string; scope?: string; need?: string; cat?: string; method?: string; before?: string }
 
 export default async function ActivityPage({ searchParams }: { searchParams: Promise<SP> }) {
   const userId = await requireUserId()
   const sp = await searchParams
   const offset = Math.min(0, Math.max(-120, Number.parseInt(sp.m || '0', 10) || 0))
-  const view = sp.view === 'summary' ? 'summary' : 'list'
+  const view = sp.view === 'summary' ? 'summary' : sp.view === 'timeline' ? 'timeline' : 'list'
+  if (view === 'timeline') return <TimelinePage userId={userId} before={sp.before} />
   const month = monthRange(offset)
   const prev = monthRange(offset - 1)
   const [entries, prevEntries] = await Promise.all([
-    entriesFor(userId, month.from, month.to),
+    entriesFor(userId, month.from, month.to, { includeDeleted: view === 'list' }),
     view === 'summary' ? entriesFor(userId, prev.from, prev.to) : Promise.resolve([] as Entry[]),
   ])
   const sum = summarize(entries, month.dayOfMonth || month.daysInMonth)
@@ -51,15 +53,7 @@ export default async function ActivityPage({ searchParams }: { searchParams: Pro
         ) : <span className="w-10" />}
       </div>
 
-      <div className="flex rounded-2xl bg-sunken p-1">
-        {(['list', 'summary'] as const).map((v) => (
-          <Link key={v} href={href({ view: v })} replace
-            className={cn('flex h-9 flex-1 items-center justify-center rounded-xl text-[14px] font-medium transition',
-              view === v ? 'bg-raised text-fg shadow-[var(--shadow-soft)]' : 'text-muted')}>
-            {v === 'list' ? 'Transactions' : 'Summary'}
-          </Link>
-        ))}
-      </div>
+      <ViewTabs view={view} href={href} />
 
       {view === 'summary'
         ? <Summary entries={entries} prevEntries={prevEntries} month={month} prevLabel={prev.label} sum={sum} href={href} />
@@ -76,6 +70,7 @@ function ListView({ entries, sp, href, back, spent }: { entries: Entry[]; sp: SP
   if (sp.cat) list = list.filter((e) => e.category === sp.cat)
   if (sp.method) list = list.filter((e) => (e.method || 'Not set') === sp.method && e.iPaid)
   const filtered = !!(sp.need || sp.cat || sp.method)
+  if (filtered) list = list.filter((e) => !e.deleted)
 
   const days = new Map<string, Entry[]>()
   for (const e of list) {
@@ -83,7 +78,7 @@ function ListView({ entries, sp, href, back, spent }: { entries: Entry[]; sp: SP
     if (!days.has(d)) days.set(d, [])
     days.get(d)!.push(e)
   }
-  const shownTotal = list.reduce((a, e) => a + e.share, 0)
+  const shownTotal = list.reduce((a, e) => a + (e.deleted ? 0 : e.share), 0)
 
   return (
     <>
@@ -114,7 +109,7 @@ function ListView({ entries, sp, href, back, spent }: { entries: Entry[]; sp: SP
       ) : (
         <div className="space-y-4">
           {Array.from(days.entries()).map(([day, items]) => {
-            const total = items.reduce((a, e) => a + e.share, 0)
+            const total = items.reduce((a, e) => a + (e.deleted ? 0 : e.share), 0)
             return (
               <section key={day}>
                 <div className="mb-1.5 flex items-baseline justify-between px-1">
@@ -232,6 +227,44 @@ function Summary({ entries, prevEntries, month, prevLabel, sum, href }: {
             {sum.top.map((e) => <EntryRow key={e.id} e={e} back={back} />)}
           </div>
         </section>
+      )}
+    </div>
+  )
+}
+
+function ViewTabs({ view, href }: { view: string; href: (p: Partial<SP>) => string }) {
+  const tabs = [['list', 'Transactions'], ['timeline', 'Timeline'], ['summary', 'Summary']] as const
+  return (
+    <div className="flex rounded-2xl bg-sunken p-1">
+      {tabs.map(([v, label]) => (
+        <Link key={v} href={v === 'timeline' ? '/activity?view=timeline' : href({ view: v })} replace
+          className={cn('flex h-9 flex-1 items-center justify-center rounded-xl text-[14px] font-medium transition',
+            view === v ? 'bg-raised text-fg shadow-[var(--shadow-soft)]' : 'text-muted')}>
+          {label}
+        </Link>
+      ))}
+    </div>
+  )
+}
+
+/** Everything that happened, newest first — adds, edits (before → after), deletes, restores, payments. */
+async function TimelinePage({ userId, before }: { userId: string; before?: string }) {
+  const at = before ? new Date(before) : undefined
+  const { items, nextBefore } = await timeline(userId, { before: at && !Number.isNaN(at.getTime()) ? at : undefined })
+  return (
+    <div className="space-y-5">
+      <div className="px-1">
+        <h1 className="text-[22px] font-semibold tracking-[-0.03em]">Activity</h1>
+        <p className="text-[13px] text-muted">Who added, changed or deleted what — across everything you share.</p>
+      </div>
+      <ViewTabs view="timeline" href={() => '/activity'} />
+      {items.length ? <Timeline items={items} back="/activity?view=timeline" /> : (
+        <div className="card"><EmptyState title="Nothing yet">Adds, edits and deletes show up here.</EmptyState></div>
+      )}
+      {nextBefore && (
+        <Link href={`/activity?view=timeline&before=${encodeURIComponent(nextBefore)}`} className="block py-2 text-center text-[14px] text-muted hover:text-fg">
+          Show older
+        </Link>
       )}
     </div>
   )

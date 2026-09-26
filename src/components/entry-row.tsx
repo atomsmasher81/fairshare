@@ -3,13 +3,14 @@ import { ArrowLeftRight } from 'lucide-react'
 import { inr, categoryMeta, NEED_META, type Need } from '@/lib/format'
 import type { Entry } from '@/lib/queries'
 import { cn } from '@/lib/utils'
+import { RestoreButton } from '@/components/history-actions'
 
 /**
  * One expense or payment, always from *your* side: what it cost you on the right,
  * and how it moved your balance with friends underneath.
  */
 export function EntryRow({ e, back, showLedger = true }: { e: Entry; back?: string; showLedger?: boolean }) {
-  const href = e.kind === 'expense' ? `/expense/${e.id}${back ? `?back=${encodeURIComponent(back)}` : ''}` : undefined
+  const href = e.kind === 'expense' ? `/expense/${e.id}${back ? `?back=${encodeURIComponent(back)}` : ''}` : `/payment/${e.id}`
   const need = e.needLevel as Need | null
 
   const meta: React.ReactNode[] = []
@@ -24,6 +25,21 @@ export function EntryRow({ e, back, showLedger = true }: { e: Entry; back?: stri
     if (showLedger) meta.push(e.ledger.kind === 'group' ? e.ledger.name : `with ${e.people.map((p) => p.split(' ')[0]).join(', ')}`)
   }
 
+  if (e.deleted) {
+    return (
+      <div className="flex items-center gap-3 px-4 py-3 opacity-70">
+        <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-sunken text-[18px] grayscale">
+          {e.kind === 'payment' ? <ArrowLeftRight size={17} className="text-muted" /> : categoryMeta(e.category).emoji}
+        </span>
+        <span className="min-w-0 flex-1">
+          <span className="block truncate text-[15px] text-muted line-through decoration-faint">{e.description}</span>
+          <span className="block truncate text-[12.5px] text-danger">Deleted{e.deleted.by ? ` by ${e.deleted.by}` : ''} · {inr(e.amount)}</span>
+        </span>
+        <RestoreButton kind={e.kind === 'payment' ? 'payment' : 'expense'} id={e.id} />
+      </div>
+    )
+  }
+
   const body = (
     <>
       <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-sunken text-[18px]">
@@ -33,6 +49,7 @@ export function EntryRow({ e, back, showLedger = true }: { e: Entry; back?: stri
         <span className="flex items-center gap-1.5">
           <span className="truncate text-[15px] font-medium">{e.description}</span>
           {e.needsReview && <span className="shrink-0 rounded-full bg-neg/15 px-1.5 text-[11px] font-medium text-neg">to sort</span>}
+          {e.edited && <span className="shrink-0 text-[11px] text-faint">edited</span>}
         </span>
         <span className="flex items-center gap-1.5 truncate text-[13px] text-muted">
           {meta.map((m, i) => (
@@ -66,7 +83,5 @@ export function EntryRow({ e, back, showLedger = true }: { e: Entry; back?: stri
   )
 
   const cls = 'flex items-center gap-3 px-4 py-3 transition-colors'
-  return href
-    ? <Link href={href} className={cn(cls, 'hover:bg-fg/[0.025] active:bg-fg/[0.05]')}>{body}</Link>
-    : <div className={cls}>{body}</div>
+  return <Link href={href} className={cn(cls, 'hover:bg-fg/[0.025] active:bg-fg/[0.05]')}>{body}</Link>
 }

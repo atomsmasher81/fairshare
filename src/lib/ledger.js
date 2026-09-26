@@ -315,9 +315,9 @@ async function undoLast(prisma, userId) {
     orderBy: { createdAt: 'desc' },
   });
   if (!last) return null;
-  await prisma.expense.update({ where: { id: last.id }, data: { deletedAt: new Date() } });
+  await prisma.expense.update({ where: { id: last.id }, data: { deletedAt: new Date(), deletedById: userId } });
   await prisma.activity.create({
-    data: { groupId: last.groupId, userId, type: 'expense_deleted', metadata: JSON.stringify({ expenseId: last.id, description: last.description }) },
+    data: { groupId: last.groupId, userId, type: 'expense_deleted', metadata: JSON.stringify({ expenseId: last.id, description: last.description, amount: last.amount }) },
   });
   return last;
 }
@@ -333,7 +333,7 @@ async function friendBalances(prisma, userId) {
       id: true, name: true, isDirect: true,
       members: { select: { user: { select: { id: true, displayName: true, upiId: true, isPlaceholder: true, username: true } } } },
       expenses: { where: { deletedAt: null }, select: { paidById: true, splits: { select: { userId: true, amount: true } } } },
-      settlements: { select: { fromUserId: true, toUserId: true, amount: true } },
+      settlements: { where: { deletedAt: null }, select: { fromUserId: true, toUserId: true, amount: true } },
     },
   });
   const friends = new Map();
@@ -545,7 +545,7 @@ async function recordSettlement(prisma, { userId, fromId, toId, amount, date, no
     const created = [];
     for (const p of parts) {
       const s = await tx.settlement.create({
-        data: { groupId: p.groupId, fromUserId: fromId, toUserId: toId, amount: p.amount, date: when, note: note || null },
+        data: { groupId: p.groupId, fromUserId: fromId, toUserId: toId, amount: p.amount, date: when, note: note || null, createdById: userId },
       });
       await tx.activity.create({
         data: { groupId: p.groupId, userId, type: 'settlement', metadata: JSON.stringify({ settlementId: s.id, fromUserId: fromId, toUserId: toId, amount: p.amount, paymentMethodId: methodId }) },

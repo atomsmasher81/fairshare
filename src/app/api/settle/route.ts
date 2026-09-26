@@ -24,7 +24,7 @@ export async function POST(request: NextRequest) {
       const members = await prisma.groupMember.count({ where: { groupId, userId: { in: [fromId, toId] }, group: { deletedAt: null } } })
       if (members !== 2) return NextResponse.json({ error: 'Both people must be in the group' }, { status: 400 })
       if (!Number.isInteger(amt) || amt <= 0) return NextResponse.json({ error: 'Enter an amount' }, { status: 400 })
-      const s = await prisma.settlement.create({ data: { groupId, fromUserId: fromId, toUserId: toId, amount: amt, date: when } })
+      const s = await prisma.settlement.create({ data: { groupId, fromUserId: fromId, toUserId: toId, amount: amt, date: when, createdById: userId } })
       await prisma.activity.create({ data: { groupId, userId, type: 'settlement', metadata: JSON.stringify({ settlementId: s.id, fromUserId: fromId, toUserId: toId, amount: amt }) } })
     } else {
       await ledger.recordSettlement(prisma, { userId, fromId, toId, amount: amt, date: when, paymentMethodId })

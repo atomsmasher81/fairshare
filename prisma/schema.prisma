@@ -160,6 +160,8 @@ model Expense {
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
   deletedAt   DateTime? // Soft delete
+  deletedById String?
+  editedAt    DateTime? // last real edit (not review/filing moves)
 
   // Capture metadata
   source      String    @default("web") // web | telegram | shortcut | sms
@@ -221,12 +223,16 @@ model Settlement {
   note       String?
   date       DateTime
   createdAt  DateTime @default(now())
+  createdById String?
+  deletedAt   DateTime? // Soft delete — deleted payments stop counting but stay in history
+  deletedById String?
 
   group    Group @relation(fields: [groupId], references: [id], onDelete: Cascade)
   fromUser User  @relation("SettlementFrom", fields: [fromUserId], references: [id])
   toUser   User  @relation("SettlementTo", fields: [toUserId], references: [id])
 }
 
+// The timeline: who added / edited / deleted / restored what, with before→after for edits.
 model Activity {
   id        String   @id @default(cuid())
   groupId   String
@@ -237,4 +243,6 @@ model Activity {
 
   group Group @relation(fields: [groupId], references: [id], onDelete: Cascade)
   user  User  @relation(fields: [userId], references: [id])
+
+  @@index([groupId, createdAt])
 }

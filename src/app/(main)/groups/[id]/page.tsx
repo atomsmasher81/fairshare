@@ -28,7 +28,7 @@ export default async function GroupPage({ params }: { params: Promise<{ id: stri
   if (!group) notFound()
   const [gl, entries, methods, friends, session] = await Promise.all([
     groupLedger(id),
-    entriesFor(userId, undefined, undefined, { groupId: id, everyone: true, take: 200 }),
+    entriesFor(userId, undefined, undefined, { groupId: id, everyone: true, take: 200, includeDeleted: true }),
     ledger.listPaymentMethods(prisma, userId) as Promise<{ id: string; name: string }[]>,
     ledger.listFriends(prisma, userId) as Promise<{ id: string; displayName: string }[]>,
     getSession(),

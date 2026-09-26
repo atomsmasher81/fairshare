@@ -5,6 +5,7 @@
 import { prisma } from '@/lib/prisma'
 import { aiEnabled, parseWithAI, type ParsedEntry } from '@/lib/ai'
 import { parseRules } from '@/lib/rules'
+import { diff, snapshot } from '@/lib/history'
 /* eslint-disable @typescript-eslint/no-require-imports */
 const ledger = require('@/lib/ledger')
 const { parseQuickText, guessCategory } = require('@/lib/parse')
@@ -422,8 +423,10 @@ export async function saveInput(userId: string, input: ExpenseInput, source: str
 
   const existing = await prisma.expense.findFirst({
     where: { id: expenseId, deletedAt: null, group: { members: { some: { userId } } } },
+    include: ledger.EXPENSE_INCLUDE,
   })
   if (!existing) throw new ledger.LedgerError('Expense not found', 404)
+  const before = snapshot(existing as unknown as Parameters<typeof snapshot>[0])
   const resolved = await ledger.resolveSplits(prisma, { group, amount: input.amount, payer, splits })
   let methodId: string | null = null
   if (payer === userId && input.paymentMethodId) {
@@ -451,12 +454,22 @@ export async function saveInput(userId: string, input: ExpenseInput, source: str
       },
       include: ledger.EXPENSE_INCLUDE,
     })
-    await tx.activity.create({
-      data: {
-        groupId: group.id, userId, type: 'expense_edited',
-        metadata: JSON.stringify({ expenseId, description, amount: input.amount, before: { amount: existing.amount, description: existing.description } }),
-      },
-    })
+    const changes = diff(before, snapshot(updated as unknown as Parameters<typeof snapshot>[0]))
+    if (changes.length) {
+      await tx.expense.update({ where: { id: expenseId }, data: { editedAt: new Date() } })
+      await tx.activity.create({
+        data: {
+          groupId: group.id, userId, type: 'expense_edited',
+          metadata: JSON.stringify({ expenseId, description, amount: input.amount, changes }),
+        },
+      })
+      // Moved to another ledger: leave a trace in the old one too, so its members see where it went
+      if (existing.groupId !== group.id) {
+        await tx.activity.create({
+          data: { groupId: existing.groupId, userId, type: 'expense_edited', metadata: JSON.stringify({ expenseId, description, amount: input.amount, changes }) },
+        })
+      }
+    }
     return updated
   })
 }

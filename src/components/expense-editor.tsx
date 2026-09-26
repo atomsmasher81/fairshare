@@ -3,11 +3,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { X, Delete, CalendarDays, ChevronRight, Plus, Check, Trash2, UserPlus } from 'lucide-react'
+import { X, Delete, CalendarDays, ChevronRight, Plus, Check, Trash2, UserPlus, History } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { inr, NEEDS, NEED_META, todayKey, dayLabel, istDay, type Need } from '@/lib/format'
 import { Avatar, Chip, PrimaryButton, SecondaryButton, Segmented, Sheet, toast } from '@/components/kit'
-import type { EditorOptions } from '@/lib/queries'
+import type { EditorOptions, TimelineItem } from '@/lib/queries'
+import { Timeline } from '@/components/timeline'
 
 export interface EditorInitial {
   id?: string
@@ -57,11 +58,12 @@ const isOp = (c: string) => '+−×÷'.includes(c)
 
 /* ---------- component ---------- */
 
-export function ExpenseEditor({ options, initial, backHref = '/home', fromDraft }: {
+export function ExpenseEditor({ options, initial, backHref = '/home', fromDraft, history }: {
   options: EditorOptions
   initial: EditorInitial
   backHref?: string
   fromDraft?: boolean
+  history?: TimelineItem[]
 }) {
   const router = useRouter()
   const me = options.me.id
@@ -81,6 +83,7 @@ export function ExpenseEditor({ options, initial, backHref = '/home', fromDraft 
   const [descFocused, setDescFocused] = useState(false)
   const [splitSheet, setSplitSheet] = useState(false)
   const [friendSheet, setFriendSheet] = useState(false)
+  const [historySheet, setHistorySheet] = useState(false)
   const [busy, setBusy] = useState(false)
   const [friends, setFriends] = useState(options.friends)
   const dateRef = useRef<HTMLInputElement>(null)
@@ -312,6 +315,11 @@ export function ExpenseEditor({ options, initial, backHref = '/home', fromDraft 
         </Link>
         <p className="text-[15px] font-semibold">{editing ? 'Edit expense' : 'New expense'}</p>
         <div className="flex items-center gap-1">
+          {editing && history && history.length > 0 && (
+            <button onClick={() => setHistorySheet(true)} className="flex h-10 w-10 items-center justify-center rounded-full text-muted hover:bg-sunken" aria-label="History">
+              <History size={19} />
+            </button>
+          )}
           {editing && (
             <button onClick={remove} className="flex h-10 w-10 items-center justify-center rounded-full text-muted hover:bg-sunken hover:text-danger" aria-label="Delete">
               <Trash2 size={19} />
@@ -559,6 +567,10 @@ export function ExpenseEditor({ options, initial, backHref = '/home', fromDraft 
           </p>
         )}
         <PrimaryButton className="mt-5 w-full" onClick={() => setSplitSheet(false)}>Done</PrimaryButton>
+      </Sheet>
+
+      <Sheet open={historySheet} onClose={() => setHistorySheet(false)} title="History">
+        {history && <Timeline items={history} />}
       </Sheet>
 
       <AddFriendSheet

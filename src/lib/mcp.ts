@@ -283,7 +283,7 @@ export function createFairShareMcp(userId: string) {
       },
     })
     if (!e) return fail('Expense not found.')
-    await prisma.expense.update({ where: { id }, data: { deletedAt: new Date() } })
+    await prisma.expense.update({ where: { id }, data: { deletedAt: new Date(), deletedById: userId } })
     await prisma.activity.create({ data: { groupId: e.groupId, userId, type: 'expense_deleted', metadata: JSON.stringify({ expenseId: id, description: e.description, amount: e.amount, via: 'mcp' }) } })
     if (!e.group.isPersonal) {
       notifyExpenseSplitMembers({ prisma, expense: e, group: e.group, excludeUserIds: [userId], action: 'deleted' }).catch(() => {})

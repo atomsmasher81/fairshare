@@ -193,6 +193,24 @@ async function notifyPayment({ prisma, actorId, fromUserId, toUserId, amount }) 
   ]);
 }
 
+/** A payment was deleted or restored — tell both sides except whoever did it. */
+async function notifyPaymentChange({ prisma, actorId, settlement, action }) {
+  const { pushToUser } = require('./push');
+  const actorName = (await resolveUserDisplayName({ prisma, userId: actorId })).split(' ')[0];
+  const from = (await resolveUserDisplayName({ prisma, userId: settlement.fromUserId })).split(' ')[0];
+  const to = (await resolveUserDisplayName({ prisma, userId: settlement.toUserId })).split(' ')[0];
+  const title = `${actorName} ${action === 'deleted' ? 'deleted' : 'restored'} a payment`;
+  for (const uid of [settlement.fromUserId, settlement.toUserId]) {
+    if (uid === actorId) continue;
+    const who = `${uid === settlement.fromUserId ? 'You' : from} paid ${uid === settlement.toUserId ? 'you' : to} ${formatINR(settlement.amount)}`;
+    const body = `${who} — ${action === 'deleted' ? 'no longer counts toward your balance' : 'counts again'}`;
+    await Promise.all([
+      sendTelegramUserNotification({ prisma, userId: uid, message: `↩️ ${title}\n${body}` }),
+      pushToUser(prisma, uid, { title, body, url: `/payment/${settlement.id}`, tag: `payment-${settlement.id}` }),
+    ]);
+  }
+}
+
 /** You were added to a group. */
 async function notifyAddedToGroup({ prisma, actorId, userId, group }) {
   const { pushToUser } = require('./push');
@@ -212,6 +230,7 @@ module.exports = {
   describeFor,
   notifyExpenseSplitMembers,
   notifyPayment,
+  notifyPaymentChange,
   notifyAddedToGroup,
   resolveUserDisplayName,
   sendTelegramUserNotification,

@@ -27,7 +27,7 @@ export default async function FriendPage({ params }: { params: Promise<{ id: str
   const f = bal.friends.find((x) => x.user.id === id)
   if (!f) notFound()
   const friend = await prisma.user.findUnique({ where: { id }, select: { claimCode: true, isPlaceholder: true, addedById: true } })
-  const entries = await entriesFor(userId, undefined, undefined, { friendId: id, take: 100 })
+  const entries = await entriesFor(userId, undefined, undefined, { friendId: id, take: 100, includeDeleted: true })
   const first = f.user.displayName.split(' ')[0]
   const back = `/friends/${id}`
 

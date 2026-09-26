@@ -1,8 +1,11 @@
 import { notFound } from 'next/navigation'
 import { prisma } from '@/lib/prisma'
 import { ExpenseEditor } from '@/components/expense-editor'
-import { editorOptions, requireUserId } from '@/lib/queries'
-import { istDay, type Need } from '@/lib/format'
+import { editorOptions, requireUserId, timeline } from '@/lib/queries'
+import { istDay, inr, dayLabel, type Need } from '@/lib/format'
+import { PageHeader } from '@/components/kit'
+import { Timeline } from '@/components/timeline'
+import { RestoreButton } from '@/components/history-actions'
 
 export const dynamic = 'force-dynamic'
 export const metadata = { title: 'Edit expense' }
@@ -12,10 +15,28 @@ export default async function EditExpensePage({ params, searchParams }: { params
   const { id } = await params
   const sp = await searchParams
   const expense = await prisma.expense.findFirst({
-    where: { id, deletedAt: null, group: { deletedAt: null, members: { some: { userId } } } },
+    where: { id, group: { deletedAt: null, members: { some: { userId } } } },
     include: { splits: true, group: { select: { id: true, isPersonal: true, isDirect: true, members: { select: { userId: true } } } } },
   })
   if (!expense) notFound()
+  const history = (await timeline(userId, { expenseId: id, take: 50 })).items
+
+  if (expense.deletedAt) {
+    const by = expense.deletedById === userId ? 'you' : (await prisma.user.findUnique({ where: { id: expense.deletedById || '' }, select: { displayName: true } }))?.displayName || 'someone'
+    return (
+      <div className="space-y-5">
+        <PageHeader back={sp.back && sp.back.startsWith('/') ? sp.back : '/activity'} title={expense.description} subtitle={`${inr(expense.amount)} · ${dayLabel(istDay(expense.date))}`} />
+        <div className="card flex items-center gap-3 p-4">
+          <p className="flex-1 text-[14px]"><span className="font-medium text-danger">Deleted</span> by {by} · it doesn’t count toward totals or balances.</p>
+          <RestoreButton kind="expense" id={expense.id} />
+        </div>
+        <section className="space-y-2">
+          <h2 className="px-1 text-[15px] font-semibold">History</h2>
+          <Timeline items={history} />
+        </section>
+      </div>
+    )
+  }
   const options = await editorOptions(userId)
 
   const memberIds = expense.group.members.map((m) => m.userId)
@@ -54,6 +75,7 @@ export default async function EditExpensePage({ params, searchParams }: { params
     <ExpenseEditor
       options={options}
       backHref={back}
+      history={history}
       initial={{
         id: expense.id,
         description: expense.description,
