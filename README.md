@@ -25,9 +25,9 @@ Set **one** of these keys in `.env`. If you set more than one, they're tried in 
 
 | Key | Model | Cost |
 |---|---|---|
-| `GROQ_API_KEY` | `openai/gpt-oss-20b` | Free tier (~180 parses/day), then ~$0.12 per 1,000 |
+| `GEMINI_API_KEY` | `gemini-2.5-flash-lite` | Free tier (Google may use free-tier data) — recommended |
+| `GROQ_API_KEY` | `openai/gpt-oss-20b` | Free tier (~180 parses/day) |
 | `OPENAI_API_KEY` | `gpt-6-luna` | ~$0.15 per 1,000 |
-| `GEMINI_API_KEY` | `gemini-2.5-flash-lite` | Free tier (Google may use the data) |
 
 With no key, simple entries (“milk 20”) and the common sentence shapes still work through the built-in rule parser (`src/lib/rules.ts`).
 

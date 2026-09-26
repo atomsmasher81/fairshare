@@ -2,9 +2,9 @@
  * Natural language → structured expense, via any OpenAI-compatible chat API.
  *
  * Providers are tried in order until one answers; configure with env vars:
+ *   GEMINI_API_KEY  → gemini-2.5-flash-lite via Google's OpenAI-compatible endpoint (free tier)
  *   GROQ_API_KEY    → openai/gpt-oss-20b on Groq (free tier, strict JSON schema, ~1s)
  *   OPENAI_API_KEY  → gpt-6-luna (≈ $0.15 per 1,000 parses)
- *   GEMINI_API_KEY  → gemini-2.5-flash-lite via Google's OpenAI-compatible endpoint
  * Override a model with GROQ_MODEL / OPENAI_MODEL / GEMINI_MODEL.
  */
 
@@ -44,14 +44,14 @@ interface Provider {
 function providers(): Provider[] {
   const list: Provider[] = []
   const env = process.env
+  if (env.GEMINI_API_KEY) {
+    list.push({ name: 'gemini', baseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai', apiKey: env.GEMINI_API_KEY, model: env.GEMINI_MODEL || 'gemini-2.5-flash-lite', reasoningEffort: 'none' })
+  }
   if (env.GROQ_API_KEY) {
     list.push({ name: 'groq', baseUrl: 'https://api.groq.com/openai/v1', apiKey: env.GROQ_API_KEY, model: env.GROQ_MODEL || 'openai/gpt-oss-20b', reasoningEffort: 'low' })
   }
   if (env.OPENAI_API_KEY) {
     list.push({ name: 'openai', baseUrl: 'https://api.openai.com/v1', apiKey: env.OPENAI_API_KEY, model: env.OPENAI_MODEL || 'gpt-6-luna', reasoningEffort: 'none' })
-  }
-  if (env.GEMINI_API_KEY) {
-    list.push({ name: 'gemini', baseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai', apiKey: env.GEMINI_API_KEY, model: env.GEMINI_MODEL || 'gemini-2.5-flash-lite', reasoningEffort: 'none' })
   }
   return list
 }
@@ -112,19 +112,26 @@ Fields:
 Methods: ${ctx.methods.join(', ') || 'none'}. Friends: ${ctx.friends.join(', ') || 'none'}. Groups: ${ctx.groups.join(', ') || 'none'}.`
 }
 
-async function callProvider(p: Provider, ctx: ParseContext, text: string, timeoutMs: number) {
+async function callProvider(p: Provider, ctx: ParseContext, text: string, timeoutMs: number, jsonMode = false) {
   const ctrl = new AbortController()
   const timer = setTimeout(() => ctrl.abort(), timeoutMs)
   try {
     const body: Record<string, unknown> = {
       model: p.model,
       temperature: 0,
-      max_completion_tokens: 400,
+      max_tokens: 400,
       messages: [
-        { role: 'system', content: systemPrompt(ctx) },
+        {
+          role: 'system',
+          content: jsonMode
+            ? `${systemPrompt(ctx)}\nReply with only a JSON object matching this schema:\n${JSON.stringify(schema(ctx))}`
+            : systemPrompt(ctx),
+        },
         { role: 'user', content: text },
       ],
-      response_format: { type: 'json_schema', json_schema: { name: 'entry', strict: true, schema: schema(ctx) } },
+      response_format: jsonMode
+        ? { type: 'json_object' }
+        : { type: 'json_schema', json_schema: { name: 'entry', strict: true, schema: schema(ctx) } },
     }
     if (p.reasoningEffort) body.reasoning_effort = p.reasoningEffort
     const res = await fetch(`${p.baseUrl}/chat/completions`, {
@@ -133,11 +140,16 @@ async function callProvider(p: Provider, ctx: ParseContext, text: string, timeou
       body: JSON.stringify(body),
       signal: ctrl.signal,
     })
+    if (res.status === 400 && !jsonMode) {
+      // Some OpenAI-compatible endpoints reject parts of the strict schema — fall back to JSON mode.
+      clearTimeout(timer)
+      return callProvider(p, ctx, text, timeoutMs, true)
+    }
     if (!res.ok) throw new Error(`${p.name} ${res.status}: ${(await res.text()).slice(0, 200)}`)
     const json = await res.json()
     const content = json?.choices?.[0]?.message?.content
     if (typeof content !== 'string') throw new Error(`${p.name}: empty response`)
-    return JSON.parse(content) as ParsedEntry
+    return JSON.parse(content.replace(/^```(?:json)?\s*|\s*```$/g, '')) as ParsedEntry
   } finally {
     clearTimeout(timer)
   }
