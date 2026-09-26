@@ -4,7 +4,7 @@
 const CATEGORY_KEYWORDS = {
   groceries: ['blinkit', 'zepto', 'instamart', 'bigbasket', 'grocery', 'groceries', 'milk', 'eggs', 'egg', 'bread', 'paneer', 'curd', 'dahi', 'atta', 'rice', 'dal', 'fruits', 'vegetables', 'veggies', 'sabzi', 'dmart', 'kirana', 'water can'],
   food: ['swiggy', 'zomato', 'chai', 'tea', 'coffee', 'breakfast', 'lunch', 'dinner', 'snacks', 'food', 'restaurant', 'cafe', 'starbucks', 'dominos', 'pizza', 'burger', 'kfc', 'mcd', 'mcdonald', 'biryani', 'juice', 'beer', 'drinks', 'bar', 'liquor'],
-  travel: ['uber', 'ola', 'rapido', 'auto', 'cab', 'taxi', 'metro', 'bus', 'train', 'irctc', 'flight', 'indigo', 'petrol', 'diesel', 'fuel', 'parking', 'toll', 'fastag', 'makemytrip', 'goibibo', 'redbus'],
+  travel: ['uber', 'ola', 'rapido', 'scooter', 'bike rental', 'car rental', 'rental', 'auto', 'cab', 'taxi', 'metro', 'bus', 'train', 'irctc', 'flight', 'indigo', 'petrol', 'diesel', 'fuel', 'parking', 'toll', 'fastag', 'makemytrip', 'goibibo', 'redbus'],
   utilities: ['electricity', 'bescom', 'wifi', 'internet', 'broadband', 'airtel', 'jio', 'vi ', 'recharge', 'gas', 'cylinder', 'water bill', 'maid', 'cook', 'laundry', 'dhobi', 'society', 'maintenance'],
   rent: ['rent', 'deposit', 'brokerage'],
   entertainment: ['movie', 'netflix', 'prime', 'hotstar', 'spotify', 'youtube', 'bookmyshow', 'pvr', 'inox', 'concert', 'game', 'steam'],
@@ -12,11 +12,13 @@ const CATEGORY_KEYWORDS = {
   health: ['meds', 'medicine', 'pharmacy', 'apollo', 'pharmeasy', '1mg', 'doctor', 'hospital', 'clinic', 'gym', 'cult', 'lab', 'test'],
 };
 
+const escapeRe = (w) => w.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+// Whole words only: "rent" must not match "rental", "bar" must not match "barber"
+const CATEGORY_RES = Object.entries(CATEGORY_KEYWORDS).map(([cat, words]) => [cat, new RegExp(`(^|[^a-z0-9])(${words.map(escapeRe).join('|')})(?=$|[^a-z0-9])`)]);
+
 function guessCategory(text) {
-  const t = ` ${String(text || '').toLowerCase()} `;
-  for (const [cat, words] of Object.entries(CATEGORY_KEYWORDS)) {
-    if (words.some((w) => t.includes(w.length <= 3 ? ` ${w.trim()} ` : w))) return cat;
-  }
+  const t = String(text || '').toLowerCase();
+  for (const [cat, re] of CATEGORY_RES) if (re.test(t)) return cat;
   return 'other';
 }
 

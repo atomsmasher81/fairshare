@@ -1,10 +1,26 @@
 import { redirect } from 'next/navigation'
 import Image from 'next/image'
-import { Mic, Delete, Home, ListOrdered, Users, CircleUser } from 'lucide-react'
+import { Mic, Delete, Home, ListOrdered, Users, CircleUser, Server, ArrowUpRight } from 'lucide-react'
 import { getSession } from '@/lib/auth'
 import { AuthCard } from '@/components/auth-card'
+import { GitHubMark } from '@/components/github-mark'
+import { SITE } from '@/lib/site'
 
-export const metadata = { title: { absolute: 'FairShare — your money, and who owes whom' } }
+export const metadata = { title: { absolute: 'FairShare — open-source Splitwise alternative with expense tracking' } }
+
+const jsonLd = {
+  '@context': 'https://schema.org',
+  '@type': 'SoftwareApplication',
+  name: 'FairShare',
+  applicationCategory: 'FinanceApplication',
+  operatingSystem: 'Web, iOS, Android (PWA), self-hosted (Docker)',
+  description: 'Open-source, self-hostable Splitwise alternative: split bills with friends and groups, track personal spending by need level, add expenses by voice with Siri, settle up over UPI.',
+  offers: { '@type': 'Offer', price: '0', priceCurrency: 'USD' },
+  url: SITE.url,
+  codeRepository: SITE.repo,
+  license: 'https://opensource.org/licenses/MIT',
+  author: { '@type': 'Person', name: SITE.author, url: SITE.authorUrl },
+}
 
 export default async function Landing() {
   const session = await getSession()
@@ -17,14 +33,22 @@ export default async function Landing() {
           <Image src="/icon-192.png" alt="" width={28} height={28} className="rounded-lg" />
           <span className="text-[17px] font-semibold tracking-[-0.03em]">FairShare</span>
         </div>
-        <a href="#signin" className="rounded-full px-3.5 py-1.5 text-[14px] text-muted hover:text-fg">Sign in</a>
+        <nav className="flex items-center gap-1">
+          <a href={SITE.repo} className="inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[14px] text-muted hover:text-fg" target="_blank" rel="noopener">
+            <GitHubMark size={15} /> <span className="hidden sm:inline">GitHub</span>
+          </a>
+          <a href="#signin" className="rounded-full px-3.5 py-1.5 text-[14px] text-muted hover:text-fg">Sign in</a>
+        </nav>
       </header>
+      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }} />
 
       <main className="mx-auto max-w-5xl px-5 sm:px-8">
         {/* hero */}
         <section className="grid items-center gap-10 pb-16 pt-8 md:grid-cols-[1fr_380px] md:gap-14 md:pt-16">
           <div>
-            <p className="label">Personal spending + splitting with friends</p>
+            <a href={SITE.repo} target="_blank" rel="noopener" className="inline-flex items-center gap-1.5 rounded-full border border-line/10 bg-card px-3 py-1 text-[12.5px] text-muted hover:text-fg">
+              <GitHubMark size={13} /> Open source · free Splitwise alternative <ArrowUpRight size={13} />
+            </a>
             <h1 className="mt-3 text-balance text-[40px] font-semibold leading-[1.04] tracking-[-0.045em] sm:text-[56px]">
               Know where your money goes. And who owes whom.
             </h1>
@@ -33,6 +57,10 @@ export default async function Landing() {
             </p>
             <div className="mt-8 max-w-sm">
               <AuthCard />
+              <a href={`${SITE.repo}#self-hosting`} target="_blank" rel="noopener"
+                className="mt-3 flex items-center justify-center gap-2 rounded-2xl border border-dashed border-line/20 px-4 py-3 text-[14px] text-muted hover:border-line/40 hover:text-fg">
+                <Server size={15} /> Prefer your own server? <span className="font-medium text-fg">Self-host it</span>
+              </a>
             </div>
           </div>
           <PhoneMock />
@@ -57,6 +85,25 @@ export default async function Landing() {
           />
         </section>
 
+        <section className="grid items-center gap-8 border-t border-line/[0.08] py-14 md:grid-cols-2">
+          <div>
+            <p className="label">Open source · MIT</p>
+            <h2 className="mt-2 text-[28px] font-semibold leading-tight tracking-[-0.035em]">Host it yourself in one command.</h2>
+            <p className="mt-2 max-w-md text-muted">
+              Your money data on your own server. One Docker container, SQLite inside, secrets generated on first run. Bring a free Gemini key for voice and plain-English entry.
+            </p>
+            <div className="mt-5 flex flex-wrap gap-2">
+              <a href={`${SITE.repo}#self-hosting`} target="_blank" rel="noopener" className="pressable inline-flex h-11 items-center gap-2 rounded-2xl bg-ink px-5 font-medium text-ink-fg">
+                <Server size={16} /> Self-host guide
+              </a>
+              <a href={SITE.repo} target="_blank" rel="noopener" className="pressable inline-flex h-11 items-center gap-2 rounded-2xl border border-line/10 bg-card px-5 font-medium">
+                <GitHubMark size={16} /> Star on GitHub
+              </a>
+            </div>
+          </div>
+          <pre className="card overflow-x-auto p-5 font-mono text-[13px] leading-relaxed text-muted"><span className="text-faint"># clone and run</span>{'\n'}<span className="text-fg">git clone {SITE.repo.replace('https://', '')}</span>{'\n'}<span className="text-fg">cd fairshare && docker compose up -d</span>{'\n\n'}<span className="text-faint"># open http://localhost:3000</span>{'\n'}<span className="text-faint"># first account becomes admin</span></pre>
+        </section>
+
         <section className="border-t border-line/[0.08] py-14 text-center">
           <h2 className="text-[28px] font-semibold tracking-[-0.035em]">Free. No ads. No daily limits.</h2>
           <p className="mx-auto mt-2 max-w-md text-muted">
@@ -68,7 +115,11 @@ export default async function Landing() {
       </main>
 
       <footer className="border-t border-line/[0.08] py-8 text-center text-[13px] text-faint">
-        FairShare · made for friends who split things
+        <p>
+          FairShare · made by <a href={SITE.authorUrl} target="_blank" rel="noopener" className="text-muted underline-offset-2 hover:text-fg hover:underline">{SITE.author}</a>
+          {' · '}<a href={SITE.repo} target="_blank" rel="noopener" className="text-muted underline-offset-2 hover:text-fg hover:underline">GitHub</a>
+          {' · '}<a href={`${SITE.repo}#self-hosting`} target="_blank" rel="noopener" className="text-muted underline-offset-2 hover:text-fg hover:underline">Self-host</a>
+        </p>
       </footer>
     </div>
   )

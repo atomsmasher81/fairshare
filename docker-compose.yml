@@ -1,0 +1,36 @@
+# FairShare — self-host in one command:
+#   docker compose up -d        → open http://localhost:3000, the first account becomes admin
+services:
+  fairshare:
+    build: .
+    image: fairshare
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    volumes:
+      - fairshare-data:/data   # database + generated secrets live here — back this up
+    environment:
+      APP_URL: ${APP_URL:-http://localhost:3000}
+      # Optional: natural-language entry ("dinner 1800 with Rahul"). Free key: https://aistudio.google.com/apikey
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      GROQ_API_KEY: ${GROQ_API_KEY:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      VAPID_SUBJECT: ${VAPID_SUBJECT:-mailto:admin@example.com}
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
+      TELEGRAM_BOT_USERNAME: ${TELEGRAM_BOT_USERNAME:-}
+
+  # Optional Telegram bot: TELEGRAM_BOT_TOKEN=... docker compose --profile telegram up -d
+  telegram-bot:
+    image: fairshare
+    profiles: ["telegram"]
+    restart: unless-stopped
+    depends_on: [fairshare]
+    volumes:
+      - fairshare-data:/data
+    environment:
+      APP_URL: ${APP_URL:-http://localhost:3000}
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
+    command: ["node", "bot/index.js"]
+
+volumes:
+  fairshare-data:

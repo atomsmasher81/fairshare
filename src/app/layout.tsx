@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from 'next'
 import localFont from 'next/font/local'
 import './globals.css'
 import { AnimatedFavicon } from '@/components/animated-favicon'
+import { SITE } from '@/lib/site'
 
 const geistSans = localFont({
   src: './fonts/GeistVF.woff',
@@ -15,10 +16,25 @@ const geistMono = localFont({
   weight: '100 900',
 })
 
+const DESCRIPTION = 'Free, open-source Splitwise alternative you can self-host. Split bills with friends and groups, track personal spending as essential / semi / luxury, add expenses by voice with Siri, and settle up over UPI.'
+
 export const metadata: Metadata = {
-  title: { default: 'FairShare — your money, and who owes whom', template: '%s · FairShare' },
-  description: 'Track what you spend and split bills with friends. Add an expense in two seconds — or just say it to Siri.',
+  metadataBase: new URL(SITE.url),
+  title: { default: 'FairShare — open-source Splitwise alternative with expense tracking', template: '%s · FairShare' },
+  description: DESCRIPTION,
   applicationName: 'FairShare',
+  keywords: ['Splitwise alternative', 'open source Splitwise', 'self-hosted expense splitter', 'split bills with friends', 'expense tracker', 'personal finance', 'UPI', 'PWA', 'Siri shortcut', 'MCP'],
+  authors: [{ name: SITE.author, url: SITE.authorUrl }],
+  creator: SITE.author,
+  openGraph: {
+    type: 'website',
+    siteName: 'FairShare',
+    title: 'FairShare — open-source Splitwise alternative',
+    description: DESCRIPTION,
+    url: SITE.url,
+  },
+  twitter: { card: 'summary_large_image', title: 'FairShare — open-source Splitwise alternative', description: DESCRIPTION },
+  alternates: { canonical: '/' },
   appleWebApp: { capable: true, title: 'FairShare', statusBarStyle: 'default' },
   formatDetection: { telephone: false },
   icons: { icon: [{ url: '/icon.gif', type: 'image/gif' }], apple: '/apple-icon.png' },

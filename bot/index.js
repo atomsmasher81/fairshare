@@ -8,7 +8,7 @@ const { notifyExpenseSplitMembers, sendReviewPrompt } = require('../src/lib/tele
 
 const prisma = new PrismaClient();
 const bot = new Bot(process.env.TELEGRAM_BOT_TOKEN);
-const APP = 'https://split.kartikgautam.com';
+const APP = (process.env.APP_URL || 'http://localhost:3000').replace(/\/$/, '');
 const { formatINR } = ledger;
 
 async function getLinkedUser(telegramId) {
