@@ -2,7 +2,8 @@
  * Natural language → structured expense, via any OpenAI-compatible chat API.
  *
  * Providers are tried in order until one answers; configure with env vars:
- *   GEMINI_API_KEY  → gemini-2.5-flash-lite via Google's OpenAI-compatible endpoint (free tier)
+ *   GEMINI_API_KEY  → gemini-3.1-flash-lite, minimal thinking (~1s, free tier). 2.5 is closed to new keys;
+ *                     3.5-flash-lite can't turn thinking off and takes 12s+.
  *   GROQ_API_KEY    → openai/gpt-oss-20b on Groq (free tier, strict JSON schema, ~1s)
  *   OPENAI_API_KEY  → gpt-6-luna (≈ $0.15 per 1,000 parses)
  * Override a model with GROQ_MODEL / OPENAI_MODEL / GEMINI_MODEL.
@@ -45,7 +46,7 @@ function providers(): Provider[] {
   const list: Provider[] = []
   const env = process.env
   if (env.GEMINI_API_KEY) {
-    list.push({ name: 'gemini', baseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai', apiKey: env.GEMINI_API_KEY, model: env.GEMINI_MODEL || 'gemini-2.5-flash-lite', reasoningEffort: 'none' })
+    list.push({ name: 'gemini', baseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai', apiKey: env.GEMINI_API_KEY, model: env.GEMINI_MODEL || 'gemini-3.1-flash-lite', reasoningEffort: 'minimal' })
   }
   if (env.GROQ_API_KEY) {
     list.push({ name: 'groq', baseUrl: 'https://api.groq.com/openai/v1', apiKey: env.GROQ_API_KEY, model: env.GROQ_MODEL || 'openai/gpt-oss-20b', reasoningEffort: 'low' })
@@ -119,7 +120,7 @@ async function callProvider(p: Provider, ctx: ParseContext, text: string, timeou
     const body: Record<string, unknown> = {
       model: p.model,
       temperature: 0,
-      max_tokens: 400,
+      max_tokens: 800,
       messages: [
         {
           role: 'system',

@@ -42,7 +42,7 @@ Bank SMS automation       → POST /api/capture {sms}  → To sort; payee rememb
 
 - **Memory.** Before guessing, each entry looks at the last time you logged the same item. "milk" reuses the type, payment method and ledger you picked for it last time. If there's no history, the type is guessed from the category (groceries → Essential, food → Semi, shopping → Luxury).
 - **AI provider** (`src/lib/ai.ts`). It uses any OpenAI-compatible API with a strict JSON schema. Your friend, group and payment-method names are built into the schema's enums, so the model can't make up names. Providers are tried in order:
-  1. Gemini `gemini-2.5-flash-lite`. Free tier with the most daily headroom; Google may use free-tier data, which is accepted here.
+  1. Gemini `gemini-3.1-flash-lite`. Free tier with the most daily headroom; Google may use free-tier data, which is accepted here.
   2. Groq `openai/gpt-oss-20b`. Free fallback, replies in about a second.
   3. OpenAI `gpt-6-luna`. Paid fallback, about $0.15 per 1,000 entries.
   - If a provider rejects the strict schema, the call retries once in plain JSON mode; the result is validated either way.

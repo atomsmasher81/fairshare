@@ -25,7 +25,7 @@ Set **one** of these keys in `.env`. If you set more than one, they're tried in 
 
 | Key | Model | Cost |
 |---|---|---|
-| `GEMINI_API_KEY` | `gemini-2.5-flash-lite` | Free tier (Google may use free-tier data) — recommended |
+| `GEMINI_API_KEY` | `gemini-3.1-flash-lite` | Free tier (Google may use free-tier data) — recommended |
 | `GROQ_API_KEY` | `openai/gpt-oss-20b` | Free tier (~180 parses/day) |
 | `OPENAI_API_KEY` | `gpt-6-luna` | ~$0.15 per 1,000 |
 
