@@ -62,6 +62,12 @@ function parseQuickText(text) {
     .replace(/\s+/g, ' ')
     .replace(/^[\s,:-]+|[\s,:-]+$/g, '')
     .trim();
+  description = description
+    .replace(/^(add|added|spent|paid|log)\s+/i, '')
+    .replace(/\s+(rupees|rupee|rs\.?|bucks)$/i, '')
+    .replace(/^(rupees|rupee|rs\.?)\s+/i, '')
+    .replace(/^(for|on)\s+/i, '')
+    .trim();
   if (!description) description = 'Expense';
 
   return { description, amount, tag, category: guessCategory(description), rawText: text.trim() };

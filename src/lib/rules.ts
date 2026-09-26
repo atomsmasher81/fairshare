@@ -11,7 +11,7 @@
  */
 import type { ParseContext, ParsedEntry } from '@/lib/ai'
 
-const FILLER = new Set(['for', 'on', 'via', 'using', 'by', 'with', 'paid', 'pay', 'spent', 'spend', 'rs', 'rs.', 'rupees', 'inr', 'the', 'a', 'an', 'split', 'equally', 'evenly', 'me', 'i', 'and', 'my', 'of', 'at', 'to', 'in', 'today', 'yesterday', 'kal', 'essential', 'semi', 'luxury', 'owes', 'owe', 'back', 'bucks'])
+const FILLER = new Set(['for', 'on', 'via', 'using', 'by', 'with', 'paid', 'pay', 'spent', 'spend', 'rs', 'rs.', 'rupees', 'inr', 'the', 'a', 'an', 'split', 'equally', 'evenly', 'me', 'i', 'and', 'my', 'of', 'at', 'to', 'in', 'today', 'yesterday', 'kal', 'essential', 'semi', 'luxury', 'owes', 'owe', 'back', 'bucks', 'add', 'added', 'expense', 'expenses', 'personal', 'personally', 'myself', 'rupee', 'into', 'log'])
 
 function amountOf(t: string): { value: number; raw: string } | null {
   const re = /(?:₹|rs\.?\s?|inr\s?)?(\d[\d,]*(?:\.\d+)?)\s*(k|thousand|hundred|lakh)?\b/gi

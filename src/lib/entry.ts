@@ -33,6 +33,7 @@ export interface Draft {
   notes: string[] // things the user should double check
   via: 'quick' | 'ai'
   needsReview: boolean
+  targetSaid?: 'personal' | 'shared' | null
 }
 
 export interface EntryContext {
@@ -72,9 +73,13 @@ const NEED_BY_CATEGORY: Record<string, NeedLevel> = {
 // Words that mean the sentence carries more than "thing amount"
 const COMPLEX = /\b(with|and|paid|pay|owe|owes|owed|split|share|shared|for|yesterday|today|tomorrow|last|on|via|by|using|card|cash|upi|gpay|phonepe|paytm|back|returned|gave|lent|borrowed|each|half|k|hundred|thousand|lakh|mein|ko|ne|diya|liya|kal|parso)\b/i
 
+// Words that say where money goes or how the sentence is built — a job for the AI, not the fast path
+const ROUTING = /\b(add|added|to|in|into|at|from|personal|personally|expense|expenses|group|myself|me|my|rupees|rupee|rs|bucks|spent|spend|split|flat)\b/i
+
 function looksSimple(text: string, ctx: EntryContext) {
   const t = text.trim()
-  if (t.length > 40 || COMPLEX.test(t)) return false
+  if (t.length > 40 || COMPLEX.test(t) || ROUTING.test(t)) return false
+  if (t.replace(/[\d,.₹]+/g, ' ').trim().split(/\s+/).filter(Boolean).length > 3) return false
   const lower = ` ${t.toLowerCase()} `
   const mentions = [...ctx.friends.map((f) => f.displayName), ...ctx.groups.map((g) => g.name), ...ctx.methods.map((m) => m.name)]
   if (mentions.some((n) => n && lower.includes(` ${n.toLowerCase().split(' ')[0]} `))) return false
@@ -86,7 +91,27 @@ function titleCase(s: string) {
   return s.replace(/\s+/g, ' ').trim().replace(/(^|\s)(\p{Ll})/gu, (_m, sp, c) => sp + c.toUpperCase())
 }
 
+const PERSONAL = /(\b(personal|personally|myself|just me|only me|for me|my own|khud|apna)\b|(^|\s)#me\b)/i
+
+/**
+ * Parse free text into a draft. `targetSaid` records whether the sentence itself chose where the
+ * money goes ("personal", "with Rahul", "in flat") so callers never override an explicit wish.
+ */
 export async function draftFromText(text: string, ctx: EntryContext): Promise<{ draft: Draft | null; error?: string; model?: string }> {
+  const r = await draftFromTextInner(text, ctx)
+  const d = r.draft
+  if (!d) return r
+  if (d.kind === 'expense' && PERSONAL.test(text)) {
+    d.groupId = null; d.groupName = null; d.friendIds = []; d.people = []
+    d.splitMode = 'equal'; d.splits = null; d.paidById = ctx.userId
+    d.targetSaid = 'personal'
+  } else if (d.groupId || d.friendIds.length) {
+    d.targetSaid = 'shared'
+  }
+  return r
+}
+
+async function draftFromTextInner(text: string, ctx: EntryContext): Promise<{ draft: Draft | null; error?: string; model?: string }> {
   const raw = String(text || '').trim()
   if (!raw) return { draft: null, error: 'Say something like “milk 20”' }
 

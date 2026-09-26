@@ -4,6 +4,7 @@ import { draftFromText, loadContext, saveDraft } from '@/lib/entry'
 const ledger = require('@/lib/ledger')
 const { notifyExpenseSplitMembers, notifyPayment, sendTelegramUserNotification, sendReviewPrompt } = require('@/lib/telegram-notifications')
 const { parseBankMessage } = require('@/lib/parse')
+const { pushToUser } = require('@/lib/push')
 
 export interface CaptureInput {
   userId: string
@@ -31,7 +32,37 @@ export interface CaptureResult {
  * - `sms` (or text that looks like a bank SMS) -> bank parser, dedupe, payee memory, review prompt
  * - `text` -> quick parser ("milk 20 @flat")
  */
+const SOURCE_LABEL: Record<string, string> = { shortcut: 'Siri', sms: 'bank SMS', telegram: 'Telegram', api: 'Shortcuts' }
+
+/**
+ * Capture + tell the user's own devices what happened. The Shortcut shows its own banner too,
+ * but a push lands in the app's history and makes a misheard entry impossible to miss.
+ */
 export async function capture(input: CaptureInput): Promise<CaptureResult> {
+  const result = await captureInner(input)
+  const source = input.source || 'shortcut'
+  if (source !== 'web' && !result.skipped) {
+    const via = SOURCE_LABEL[source] || 'Shortcuts'
+    const e = result.expense as { id?: string; needsReview?: boolean } | undefined
+    const payload = result.ok
+      ? {
+          title: e?.needsReview ? `Saved from ${via} — needs a look` : `Added from ${via}`,
+          body: result.message.replace(/^[✅📥]\s*/u, ''),
+          url: e?.id ? `/expense/${e.id}?back=/home` : '/home',
+          tag: `capture-${e?.id || Date.now()}`,
+        }
+      : {
+          title: `Couldn’t add from ${via}`,
+          body: `“${(input.text || input.sms || '').slice(0, 80)}” — ${result.message}`,
+          url: '/add',
+          tag: `capture-fail-${Date.now()}`,
+        }
+    pushToUser(prisma, input.userId, payload).catch(() => {})
+  }
+  return result
+}
+
+async function captureInner(input: CaptureInput): Promise<CaptureResult> {
   const { userId, groupId, groupName, category, source } = input
   const notify = input.notifyTelegram !== false
   const date = input.date ? new Date(input.date) : new Date()
@@ -59,13 +90,16 @@ export async function capture(input: CaptureInput): Promise<CaptureResult> {
     const ctx = await loadContext(userId)
     const { draft, error } = await draftFromText(raw, ctx)
     if (!draft) return { ok: false, status: 422, message: error || 'Couldn’t understand that' }
-    // Old shortcuts pass the ledger explicitly — honour it.
+    // Old shortcuts send a fixed group with every request. That's only a default:
+    // if the sentence itself says where it goes ("personal", "with Rahul"), the sentence wins.
     const explicit = groupId
       ? ctx.groups.find((g) => g.id === groupId)
       : groupName ? ctx.groups.find((g) => g.name.toLowerCase() === groupName.toLowerCase()) : null
-    if (groupName && ledger.PERSONAL_TAGS.has(groupName.toLowerCase()) && draft.kind === 'expense') {
+    if (draft.targetSaid || draft.kind !== 'expense') {
+      // keep what was said
+    } else if (groupName && ledger.PERSONAL_TAGS.has(groupName.toLowerCase())) {
       draft.groupId = null; draft.friendIds = []; draft.splitMode = 'equal'; draft.splits = null; draft.paidById = userId
-    } else if (explicit && draft.kind === 'expense') {
+    } else if (explicit) {
       draft.groupId = explicit.id; draft.groupName = explicit.name; draft.friendIds = []
     } else if ((groupId || groupName) && !explicit) {
       return { ok: false, status: 404, message: 'Group not found' }

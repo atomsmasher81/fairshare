@@ -106,7 +106,7 @@ Fields:
 - method: only if a payment method is mentioned; map "gpay"→Google Pay, "card"/"credit card" to the matching method, "upi" to the first UPI app listed.
 - date: YYYY-MM-DD only if a day is mentioned ("yesterday", "on Monday"), else null.
 - group: only if a listed group is named.
-- people: friends involved besides me. Empty for personal spending.
+- people: friends involved besides me. Empty for personal spending — \"personal\", \"just me\", \"myself\", \"for me\" always mean people=[] and group=null.
 - paid_by: "me" unless a friend paid ("Rahul paid for lunch" → Rahul).
 - split: "equal" when shared evenly among me + people; "full" when the other side owes the entire amount ("Rahul owes me 500 for cab", "I paid Amit's 300 ticket"); "exact" when specific amounts per person are said (fill shares, including "me"). null for personal.
 - For settlements: paid_by = who paid, people = [who received] (use "me" via paid_by when a friend paid me, and people=[that friend] when I paid).

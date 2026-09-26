@@ -28,7 +28,7 @@ export async function POST(request: NextRequest) {
   }
   if (!body) return NextResponse.json({ ok: false, message: 'Empty body' }, { status: 400 })
 
-  const userId = await resolveApiUser(request, body)
+  const userId = await resolveApiUser(request)
   if (!userId) return NextResponse.json({ ok: false, message: 'Unauthorized — check your token in FairShare Settings' }, { status: 401 })
 
   const str = (k: string) => (typeof body![k] === 'string' ? (body![k] as string) : undefined)
@@ -41,7 +41,7 @@ export async function POST(request: NextRequest) {
     groupName: str('groupName') || str('group'),
     category: str('category'),
     date: str('date'),
-    source: str('source') || (bearer ? 'shortcut' : 'web'),
+    source: str('source') || (str('sms') || str('message') ? 'sms' : bearer ? 'shortcut' : 'web'),
     notifyTelegram: body.notifyTelegram === false || body.notifyTelegram === 'false' ? false : true,
   })
   return NextResponse.json(result, { status: result.status })

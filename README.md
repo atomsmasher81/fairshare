@@ -40,7 +40,7 @@ Authorization: Bearer <personal key from You → Add by voice with Siri>
 { "sms": "<bank debit SMS>" }          → lands in “To sort”
 ```
 
-The older `/api/expenses/make-entry` endpoint, and the shared `FAIRSHARE_API_KEY`, still work.
+Each person uses their own named key from **You → Add by voice with Siri**; the old shared-key endpoint has been removed.
 
 ## MCP server
 
