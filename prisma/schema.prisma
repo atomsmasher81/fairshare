@@ -17,7 +17,7 @@ model User {
 
   // Frictionless capture
   upiId            String?   // for "Pay via UPI" settle links
-  apiTokenHash     String?   @unique // personal token for Siri/Shortcuts (sha256)
+  apiTokenHash     String?   @unique // legacy single key — migrated into ApiKey, no longer read
   defaultGroupId   String?   // where "milk 20" goes; null = personal
   linkCode         String?   @unique // one-time Telegram link code
   linkCodeExpires  DateTime?
@@ -41,6 +41,23 @@ model User {
   paymentMethods   PaymentMethod[]
   aiCalls          AiCall[]
   pushSubscriptions PushSubscription[]
+  apiKeys          ApiKey[]
+}
+
+// Personal keys for Shortcuts / SMS automation / MCP. Only a SHA-256 hash is stored,
+// so a key is shown once at creation and can never be viewed again — only revoked.
+model ApiKey {
+  id         String    @id @default(cuid())
+  userId     String
+  name       String
+  hash       String    @unique
+  prefix     String    // first characters, e.g. "fs_l9qx", to recognise it in the list
+  createdAt  DateTime  @default(now())
+  lastUsedAt DateTime?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
 }
 
 // One per device that allowed notifications (installed PWA on iOS 16.4+, Android, desktop).

@@ -1,10 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { WebStandardStreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js'
-import { prisma } from '@/lib/prisma'
+import { userIdFromKey } from '@/lib/api-keys'
 import { createFairShareMcp } from '@/lib/mcp'
 import { rateLimited } from '@/lib/rate-limit'
-/* eslint-disable @typescript-eslint/no-require-imports */
-const { hashToken } = require('@/lib/ledger')
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -18,8 +16,7 @@ async function userFromRequest(request: NextRequest) {
   const bearer = (request.headers.get('authorization') || '').match(/^Bearer\s+(fs_\S+)$/i)?.[1]
     || request.nextUrl.searchParams.get('token')
   if (!bearer || !bearer.startsWith('fs_')) return null
-  const u = await prisma.user.findUnique({ where: { apiTokenHash: hashToken(bearer) }, select: { id: true } })
-  return u?.id || null
+  return userIdFromKey(bearer)
 }
 
 async function handle(request: NextRequest) {

@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { ArrowDown, ArrowUp, Check, Copy, Plus, Eye, EyeOff, Smartphone, Mic, Zap, MessageSquare } from 'lucide-react'
+import { ArrowDown, ArrowUp, Check, Copy, Plus, Eye, EyeOff, Smartphone, Mic, Zap, MessageSquare, Trash2 } from 'lucide-react'
 import { Chip, PrimaryButton, SecondaryButton, Segmented, toast } from '@/components/kit'
 import { cn } from '@/lib/utils'
 
@@ -146,21 +146,88 @@ export function MethodsSection({ methods }: { methods: { id: string; name: strin
 
 /* ---------- iPhone shortcut ---------- */
 
-export function ShortcutSection({ apiUrl, hasToken, aiEnabled }: { apiUrl: string; hasToken: boolean; aiEnabled: boolean }) {
-  const router = useRouter()
-  const [token, setToken] = useState<string | null>(null)
-  const [busy, setBusy] = useState(false)
-  const [showSms, setShowSms] = useState(false)
+export interface ApiKeyRow { id: string; name: string; prefix: string; createdAt: string; lastUsedAt: string | null }
 
-  const generate = async () => {
-    if (hasToken && !confirm('Make a new key? Shortcuts using the old one will stop working until you paste the new one.')) return
+function ago(iso: string | null) {
+  if (!iso) return 'never used'
+  const m = Math.floor((Date.now() - new Date(iso).getTime()) / 60000)
+  if (m < 2) return 'used just now'
+  if (m < 60) return `used ${m}m ago`
+  if (m < 60 * 24) return `used ${Math.floor(m / 60)}h ago`
+  return `used ${new Date(iso).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}`
+}
+
+/** Personal keys: named, shown once, revocable. Only a hash is stored, so they can't be viewed later. */
+export function KeyManager({ initial }: { initial: ApiKeyRow[] }) {
+  const [keys, setKeys] = useState(initial)
+  const [name, setName] = useState('')
+  const [fresh, setFresh] = useState<{ id: string; token: string } | null>(null)
+  const [busy, setBusy] = useState(false)
+
+  const create = async (e: React.FormEvent) => {
+    e.preventDefault()
     setBusy(true)
-    const res = await fetch('/api/me/token', { method: 'POST' })
-    const j = await res.json()
+    const res = await fetch('/api/keys', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: name || 'iPhone Shortcuts' }) })
+    const j = await res.json().catch(() => ({}))
     setBusy(false)
-    setToken(j.token)
-    router.refresh()
+    if (!res.ok) { toast(j.error || 'Couldn’t create key', { tone: 'error' }); return }
+    setKeys((k) => [{ ...j.key, createdAt: j.key.createdAt, lastUsedAt: null }, ...k])
+    setFresh({ id: j.key.id, token: j.token })
+    setName('')
   }
+
+  const remove = async (k: ApiKeyRow) => {
+    if (!confirm(`Delete “${k.name}”? Anything using it (Shortcuts, Claude, automations) stops working right away.`)) return
+    const res = await fetch(`/api/keys/${k.id}`, { method: 'DELETE' })
+    if (!res.ok) { toast('Couldn’t delete key', { tone: 'error' }); return }
+    setKeys((xs) => xs.filter((x) => x.id !== k.id))
+    if (fresh?.id === k.id) setFresh(null)
+    toast('Key deleted')
+  }
+
+  return (
+    <div className="mt-2 space-y-2">
+      {keys.length > 0 && (
+        <div className="divide-y divide-line/[0.07] rounded-xl border border-line/10">
+          {keys.map((k) => (
+            <div key={k.id} className="px-3 py-2.5">
+              <div className="flex items-center gap-2">
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-[14px] font-medium">{k.name}</p>
+                  <p className="text-[12px] text-muted">
+                    <code className="font-mono">{k.prefix.endsWith('…') ? k.prefix : `${k.prefix}…`}</code> · created {new Date(k.createdAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })} · {ago(k.lastUsedAt)}
+                  </p>
+                </div>
+                <button onClick={() => remove(k)} className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-muted hover:bg-sunken hover:text-danger" aria-label={`Delete ${k.name}`}>
+                  <Trash2 size={15} />
+                </button>
+              </div>
+              {fresh?.id === k.id && (
+                <div className="mt-2 rounded-lg bg-sunken p-2">
+                  <div className="flex items-center gap-2">
+                    <code className="min-w-0 flex-1 truncate font-mono text-[12px]">{fresh.token}</code>
+                    <CopyButton value={fresh.token} />
+                  </div>
+                  <p className="mt-1 text-[12px] text-neg">Copy it now — for your safety it’s never shown again.</p>
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+      <form onSubmit={create} className="flex gap-2">
+        <input value={name} onChange={(e) => setName(e.target.value)} maxLength={40}
+          placeholder={keys.length ? 'Name a new key — e.g. SMS automation' : 'Name it — e.g. iPhone Shortcuts'}
+          className="h-10 min-w-0 flex-1 rounded-xl border border-line/10 bg-bg px-3 text-[14px] outline-none focus:border-line/25" />
+        <SecondaryButton className="h-10 px-4 text-[14px]" disabled={busy}>Create</SecondaryButton>
+      </form>
+      <p className="text-[12px] text-muted">Use a separate key per device or app, so you can delete one without breaking the others. Keys can’t be viewed again after creation — if you lose one, delete it and make a new one.</p>
+    </div>
+  )
+}
+
+export function ShortcutSection({ apiUrl, keys, aiEnabled }: { apiUrl: string; keys: ApiKeyRow[]; aiEnabled: boolean }) {
+  const [showSms, setShowSms] = useState(false)
 
   const Step = ({ n, children }: { n: number; children: React.ReactNode }) => (
     <li className="flex gap-3">
@@ -188,19 +255,9 @@ export function ShortcutSection({ apiUrl, hasToken, aiEnabled }: { apiUrl: strin
 
         <ol className="space-y-4">
           <Step n={1}>
-            <p className="font-medium">Get your personal key</p>
+            <p className="font-medium">Get a personal key</p>
             <p className="text-[13px] text-muted">It lets the shortcut add expenses as you. Keep it private.</p>
-            {token ? (
-              <div className="mt-2 flex items-center gap-2 rounded-xl bg-sunken p-2">
-                <code className="min-w-0 flex-1 truncate font-mono text-[12px]">{token}</code>
-                <CopyButton value={token} />
-              </div>
-            ) : (
-              <SecondaryButton className="mt-2 h-10 text-[14px]" onClick={generate} disabled={busy}>
-                {hasToken ? 'Make a new key' : 'Create key'}
-              </SecondaryButton>
-            )}
-            {token && <p className="mt-1 text-[12px] text-neg">Copy it now — it won’t be shown again.</p>}
+            <KeyManager initial={keys} />
           </Step>
           <Step n={2}>
             <p className="font-medium">Build the shortcut</p>
@@ -211,7 +268,7 @@ export function ShortcutSection({ apiUrl, hasToken, aiEnabled }: { apiUrl: strin
                 <p><b>Get Contents of URL</b></p>
                 <div className="flex items-center gap-2"><span className="w-14 shrink-0 text-muted">URL</span><code className="min-w-0 flex-1 truncate font-mono text-[12px]">{apiUrl}</code><CopyButton value={apiUrl} /></div>
                 <div className="flex gap-2"><span className="w-14 shrink-0 text-muted">Method</span><span>POST</span></div>
-                <div className="flex items-center gap-2"><span className="w-14 shrink-0 text-muted">Header</span><code className="min-w-0 flex-1 truncate font-mono text-[12px]">Authorization: Bearer {token ? token.slice(0, 8) + '…' : '<key>'}</code>{token && <CopyButton value={`Bearer ${token}`} />}</div>
+                <div className="flex items-center gap-2"><span className="w-14 shrink-0 text-muted">Header</span><code className="min-w-0 flex-1 truncate font-mono text-[12px]">Authorization: Bearer &lt;your key&gt;</code></div>
                 <div className="flex gap-2"><span className="w-14 shrink-0 text-muted">Body</span><span>JSON → <code className="font-mono text-[12px]">text</code> = <i>Dictated Text</i></span></div>
               </div>
               <div className="rounded-xl border border-line/10 p-3"><b>Get Dictionary Value</b> <span className="text-muted">— key</span> <code className="font-mono text-[12px]">message</code></div>
@@ -413,7 +470,7 @@ export function McpSection({ url }: { url: string }) {
         </div>
         <div className="flex items-center gap-2">
           <span className="w-12 shrink-0 text-muted">Auth</span>
-          <span className="flex-1">Bearer header with the same personal key as the Siri shortcut (above).</span>
+          <span className="flex-1">Bearer header with a personal key — create one named “Claude” above.</span>
         </div>
         <div className="rounded-xl bg-sunken p-3">
           <p className="mb-1 text-[12px] text-muted">Claude Code</p>

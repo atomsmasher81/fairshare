@@ -15,7 +15,7 @@ export default async function SettingsPage() {
   const [user, methods, session] = await Promise.all([
     prisma.user.findUnique({
       where: { id: userId },
-      select: { displayName: true, username: true, upiId: true, apiTokenHash: true, telegramLink: { select: { id: true } } },
+      select: { displayName: true, username: true, upiId: true, telegramLink: { select: { id: true } }, apiKeys: { orderBy: { createdAt: 'desc' }, select: { id: true, name: true, prefix: true, createdAt: true, lastUsedAt: true } } },
     }),
     ledger.listPaymentMethods(prisma, userId, { includeArchived: true }) as Promise<{ id: string; name: string; kind: string; archivedAt: Date | null }[]>,
     getSession(),
@@ -30,7 +30,7 @@ export default async function SettingsPage() {
       <ProfileSection displayName={user?.displayName || ''} upiId={user?.upiId || null} />
       <NotificationsSection publicKey={process.env.VAPID_PUBLIC_KEY || null} />
       <MethodsSection methods={methods.map((m) => ({ id: m.id, name: m.name, kind: m.kind, archived: !!m.archivedAt }))} />
-      <ShortcutSection apiUrl={`${proto}://${host}/api/capture`} hasToken={!!user?.apiTokenHash} aiEnabled={aiEnabled()} />
+      <ShortcutSection apiUrl={`${proto}://${host}/api/capture`} keys={(user?.apiKeys || []).map((k) => ({ ...k, createdAt: k.createdAt.toISOString(), lastUsedAt: k.lastUsedAt?.toISOString() || null }))} aiEnabled={aiEnabled()} />
       <McpSection url={`${proto}://${host}/api/mcp`} />
       {process.env.TELEGRAM_BOT_TOKEN && <TelegramSection linked={!!user?.telegramLink} />}
       <AppearanceSection />

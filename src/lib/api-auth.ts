@@ -2,8 +2,7 @@ import crypto from 'crypto'
 import { NextRequest } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { getSession } from '@/lib/auth'
-// eslint-disable-next-line @typescript-eslint/no-require-imports
-const { hashToken } = require('@/lib/ledger')
+import { userIdFromKey } from '@/lib/api-keys'
 
 function safeEquals(a: string, b: string) {
   const x = Buffer.from(a), y = Buffer.from(b)
@@ -23,8 +22,7 @@ export async function resolveApiUser(request: NextRequest, body?: Record<string,
 
   if (bearer) {
     if (bearer.startsWith('fs_')) {
-      const user = await prisma.user.findUnique({ where: { apiTokenHash: hashToken(bearer) }, select: { id: true } })
-      return user?.id || null
+      return userIdFromKey(bearer)
     }
     const master = process.env.FAIRSHARE_API_KEY
     if (master && safeEquals(bearer, master)) {
