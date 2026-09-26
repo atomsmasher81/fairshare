@@ -5,7 +5,7 @@ import { requireUserId, ledger } from '@/lib/queries'
 import { getSession } from '@/lib/auth'
 import { aiEnabled } from '@/lib/ai'
 import { PageHeader } from '@/components/kit'
-import { ProfileSection, NotificationsSection, MethodsSection, ShortcutSection, AppearanceSection, SignOut, TelegramSection } from '@/components/settings-client'
+import { ProfileSection, NotificationsSection, McpSection, MethodsSection, ShortcutSection, AppearanceSection, SignOut, TelegramSection } from '@/components/settings-client'
 
 export const dynamic = 'force-dynamic'
 export const metadata = { title: 'You' }
@@ -31,6 +31,7 @@ export default async function SettingsPage() {
       <NotificationsSection publicKey={process.env.VAPID_PUBLIC_KEY || null} />
       <MethodsSection methods={methods.map((m) => ({ id: m.id, name: m.name, kind: m.kind, archived: !!m.archivedAt }))} />
       <ShortcutSection apiUrl={`${proto}://${host}/api/capture`} hasToken={!!user?.apiTokenHash} aiEnabled={aiEnabled()} />
+      <McpSection url={`${proto}://${host}/api/mcp`} />
       {process.env.TELEGRAM_BOT_TOKEN && <TelegramSection linked={!!user?.telegramLink} />}
       <AppearanceSection />
       <div className="flex items-center justify-between px-1">

@@ -49,6 +49,10 @@ Bank SMS automation       → POST /api/capture {sms}  → To sort; payee rememb
   - Every call is logged in `AiCall`, and it's rate-limited to 120 per hour per user.
 - **Rule parser** (`src/lib/rules.ts`). Used when there's no key or the provider is down. It understands *with X and Y*, *X owes me*, *I owe X*, *X paid*, *paid X back*, *X paid me*, *card / cash / gpay / phonepe*, *yesterday*, *1.2k*, and group names.
 
+### MCP
+
+`/api/mcp` exposes FairShare to Claude and other MCP clients (Bearer = personal key). Read tools: context, transactions, month summary, balances, friend history, groups. Write tools: log from plain words, structured add, record payment, delete. Writes go through the same code as the app, so splits, validation and notifications behave identically.
+
 ## Data model (additions)
 
 - `Group.isDirect`: a hidden ledger for a specific set of people outside any group. One per exact member set, so "me + Rahul" and "me + Rahul + Amit" are separate ledgers. Personal expenses stay in the hidden `isPersonal` ledger.

@@ -398,3 +398,32 @@ export function NotificationsSection({ publicKey }: { publicKey: string | null }
     </Block>
   )
 }
+
+/* ---------- MCP ---------- */
+
+export function McpSection({ url }: { url: string }) {
+  const cmd = `claude mcp add --transport http fairshare ${url} --header "Authorization: Bearer <your key>"`
+  return (
+    <Block title="Use with Claude (MCP)" hint="Let Claude or any MCP client add expenses, read your month and balances, and settle up — as you.">
+      <div className="card space-y-3 p-4 text-[13.5px]">
+        <div className="flex items-center gap-2">
+          <span className="w-12 shrink-0 text-muted">URL</span>
+          <code className="min-w-0 flex-1 truncate font-mono text-[12px]">{url}</code>
+          <CopyButton value={url} />
+        </div>
+        <div className="flex items-center gap-2">
+          <span className="w-12 shrink-0 text-muted">Auth</span>
+          <span className="flex-1">Bearer header with the same personal key as the Siri shortcut (above).</span>
+        </div>
+        <div className="rounded-xl bg-sunken p-3">
+          <p className="mb-1 text-[12px] text-muted">Claude Code</p>
+          <div className="flex items-start gap-2">
+            <code className="min-w-0 flex-1 break-all font-mono text-[11.5px]">{cmd}</code>
+            <CopyButton value={cmd} />
+          </div>
+        </div>
+        <p className="text-[12.5px] text-muted">Clients that can’t send headers can append <code className="font-mono">?token=&lt;your key&gt;</code> to the URL. Treat that URL like a password.</p>
+      </div>
+    </Block>
+  )
+}

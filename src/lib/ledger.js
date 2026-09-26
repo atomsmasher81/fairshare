@@ -360,7 +360,12 @@ async function friendBalances(prisma, userId) {
       else if (st.toUserId === userId && friends.has(st.fromUserId)) bump(st.fromUserId, g.id, -st.amount);
     }
   }
-  const groupNames = Object.fromEntries(groups.map((g) => [g.id, g.isDirect ? 'Non-group' : g.name]));
+  // 1:1 ledger → "Non-group"; ad-hoc ledger with several friends → "with Amit, Rahul"
+  const groupNames = Object.fromEntries(groups.map((g) => {
+    if (!g.isDirect) return [g.id, g.name];
+    const others = g.members.filter((m) => m.user.id !== userId).map((m) => m.user.displayName.split(' ')[0]);
+    return [g.id, others.length === 1 ? 'Non-group' : `with ${others.join(', ')}`];
+  }));
   const direct = new Set(groups.filter((g) => g.isDirect).map((g) => g.id));
   return Array.from(friends.values())
     .map((f) => ({

@@ -42,6 +42,16 @@ Authorization: Bearer <personal key from You → Add by voice with Siri>
 
 The older `/api/expenses/make-entry` endpoint, and the shared `FAIRSHARE_API_KEY`, still work.
 
+## MCP server
+
+FairShare is also a remote MCP server at `/api/mcp` (Streamable HTTP, stateless), authenticated with the same personal key as the Siri shortcut:
+
+```bash
+claude mcp add --transport http fairshare https://split.kartikgautam.com/api/mcp --header "Authorization: Bearer fs_…"
+```
+
+Tools: `get_context`, `log_expense` (plain words), `add_expense` (structured), `list_transactions`, `month_summary`, `balances`, `friend_history`, `groups`, `record_payment`, `delete_expense`. Everything runs as the key's owner, with the same validation and notifications as the app. Limited to 300 calls/hour per user.
+
 ## Push notifications
 
 Friends get a notification on their phone when you add, edit or delete an expense with them, record a payment, or add them to a group (Telegram gets the same message if linked). One-time setup on the server:
