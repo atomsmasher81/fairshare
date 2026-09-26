@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+<title>Offline · FairShare</title>
+<style>
+  :root { color-scheme: light dark; --bg:#f6f5f1; --fg:#1c1b17; --muted:#706d64; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#11110f; --fg:#f0eee7; --muted:#a09c92; } }
+  body { margin:0; min-height:100dvh; display:grid; place-items:center; background:var(--bg); color:var(--fg);
+         font: 16px/1.5 -apple-system, system-ui, sans-serif; text-align:center; padding:24px; }
+  h1 { font-size:22px; letter-spacing:-0.02em; margin:0 0 6px; }
+  p { color:var(--muted); margin:0 0 20px; }
+  button { font:inherit; border:0; border-radius:14px; padding:12px 20px; background:var(--fg); color:var(--bg); }
+</style>
+</head>
+<body>
+  <div>
+    <h1>You're offline</h1>
+    <p>FairShare needs a connection to keep your numbers right.</p>
+    <button onclick="location.reload()">Try again</button>
+  </div>
+</body>
+</html>

@@ -1,169 +1,112 @@
 import Link from 'next/link'
-import { notFound, redirect } from 'next/navigation'
+import { notFound } from 'next/navigation'
+import { ArrowRight, Plus } from 'lucide-react'
 import { prisma } from '@/lib/prisma'
+import { entriesFor, groupLedger, requireUserId, ledger } from '@/lib/queries'
 import { getSession } from '@/lib/auth'
-import { InviteLink } from '@/components/invite-link'
-import { GroupStats } from '@/components/group-stats'
-import { ExpenseListWithFilters } from '@/components/expense-list-with-filters'
-import { GroupMembersManager } from '@/components/group-members-manager'
-import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { inr } from '@/lib/format'
+import { EmptyState, PageHeader } from '@/components/kit'
+import { EntryRow } from '@/components/entry-row'
+import { SettleUp } from '@/components/settle'
+import { GroupMembers } from '@/components/group-manage'
+import { cn } from '@/lib/utils'
 
-interface Props {
-  params: Promise<{ id: string }>
+export const dynamic = 'force-dynamic'
+
+export async function generateMetadata({ params }: { params: Promise<{ id: string }> }) {
+  const g = await prisma.group.findUnique({ where: { id: (await params).id }, select: { name: true } })
+  return { title: g?.name || 'Group' }
 }
 
-export default async function GroupPage({ params }: Props) {
+export default async function GroupPage({ params }: { params: Promise<{ id: string }> }) {
+  const userId = await requireUserId()
   const { id } = await params
-  const session = await getSession()
-  
-  if (!session.isLoggedIn || !session.userId) {
-    redirect('/login')
-  }
-
-  const membership = await prisma.groupMember.findUnique({
-    where: { groupId_userId: { groupId: id, userId: session.userId } },
+  const group = await prisma.group.findFirst({
+    where: { id, deletedAt: null, isPersonal: false, members: { some: { userId } } },
+    select: { id: true, name: true, inviteCode: true, createdById: true, isDirect: true },
   })
-
-  if (!membership) {
-    notFound()
-  }
-
-  const group = await prisma.group.findUnique({
-    where: { id, deletedAt: null },
-    include: {
-      members: {
-        include: {
-          user: { select: { id: true, displayName: true, username: true } },
-        },
-      },
-    },
-  })
-
-  if (!group) {
-    notFound()
-  }
-
-  const allExpenses = await prisma.expense.findMany({
-    where: { groupId: id, deletedAt: null },
-    include: {
-      paidBy: { select: { id: true, displayName: true } },
-      splits: {
-        include: { user: { select: { id: true, displayName: true } } },
-      },
-    },
-    orderBy: { date: 'desc' },
-  })
-
-  const settlements = await prisma.settlement.findMany({
-    where: { groupId: id },
-    include: {
-      fromUser: { select: { id: true, displayName: true } },
-      toUser: { select: { id: true, displayName: true } },
-    },
-    orderBy: { date: 'desc' },
-  })
-
-  const totalExpenses = allExpenses.reduce((sum, e) => sum + e.amount, 0)
-  const userPaid = allExpenses
-    .filter(e => e.paidById === session.userId)
-    .reduce((sum, e) => sum + e.amount, 0)
-
-  let userBalance = 0
-  allExpenses.forEach(expense => {
-    if (expense.paidById === session.userId) {
-      userBalance += expense.amount
-    }
-    expense.splits.forEach(split => {
-      if (split.userId === session.userId) {
-        userBalance -= split.amount
-      }
-    })
-  })
-
-  settlements.forEach(s => {
-    if (s.fromUserId === session.userId) userBalance += s.amount
-    if (s.toUserId === session.userId) userBalance -= s.amount
-  })
-
-  const formattedExpenses = allExpenses.map(e => ({
-    id: e.id,
-    description: e.description,
-    amount: e.amount,
-    category: e.category,
-    date: e.date.toISOString(),
-    paidBy: e.paidBy,
-    paidById: e.paidById,
-    splits: e.splits.map(s => ({ userId: s.userId, user: s.user, amount: s.amount })),
-  }))
-
-  const formattedSettlements = settlements.map(s => ({
-    id: s.id,
-    fromUser: s.fromUser,
-    toUser: s.toUser,
-    amount: s.amount,
-    date: s.date.toISOString(),
-    note: s.note,
-  }))
-
-  const formattedMembers = group.members.map(m => ({
-    userId: m.userId,
-    user: m.user,
-  }))
-
-  const canManageMembers = session.isAdmin || group.createdById === session.userId
+  if (!group) notFound()
+  const [gl, entries, methods, friends, session] = await Promise.all([
+    groupLedger(id),
+    entriesFor(userId, undefined, undefined, { groupId: id, everyone: true, take: 200 }),
+    ledger.listPaymentMethods(prisma, userId) as Promise<{ id: string; name: string }[]>,
+    ledger.listFriends(prisma, userId) as Promise<{ id: string; displayName: string }[]>,
+    getSession(),
+  ])
+  if (!gl) notFound()
+  const name = (uid: string) => (uid === userId ? 'You' : gl.members.find((m) => m.id === uid)?.displayName.split(' ')[0] || 'Someone')
+  const myNet = gl.net.get(userId) || 0
+  const mine = gl.transfers.filter((t) => t.from === userId || t.to === userId)
+  const others = gl.transfers.filter((t) => t.from !== userId && t.to !== userId)
+  const back = `/groups/${id}`
 
   return (
-    <div className="space-y-6">
-      <div className="flex flex-col gap-5 rounded-[28px] border border-[var(--border)] bg-[linear-gradient(180deg,rgba(255,255,255,0.48),rgba(255,255,255,0.18))] p-6 shadow-[var(--shadow-card)] md:flex-row md:items-start md:justify-between">
-        <div>
-          <Link href="/dashboard" className="mb-3 inline-block text-sm font-medium text-[var(--accent)] hover:opacity-80">
-            ← Back
-          </Link>
-          <p className="eyebrow mb-2">Group workspace</p>
-          <h1 className="text-3xl font-semibold text-[var(--foreground)]">{group.name}</h1>
-          {group.description && (
-            <p className="mt-2 max-w-2xl text-[var(--muted-foreground)]">{group.description}</p>
-          )}
-        </div>
-        <div className="flex gap-2 self-start">
-          <Link href={`/groups/${id}/settle`}>
-            <Button variant="secondary">Settle Up</Button>
-          </Link>
-          <Link href={`/groups/${id}/add`}>
-            <Button>+ Add Expense</Button>
-          </Link>
-        </div>
-      </div>
-
-      <GroupStats
-        totalExpenses={totalExpenses}
-        userPaid={userPaid}
-        userBalance={userBalance}
+    <div className="space-y-5">
+      <PageHeader
+        back="/friends?tab=groups"
+        title={group.name}
+        subtitle={`${gl.members.length} ${gl.members.length === 1 ? 'member' : 'members'} · ${inr(gl.total)} spent in total`}
       />
 
-      <InviteLink code={group.inviteCode} />
+      <div className="card p-5">
+        <p className="text-[14px] text-muted">Your balance</p>
+        <p className={cn('num mt-0.5 text-[28px] font-semibold tracking-[-0.035em]', myNet > 0 ? 'text-pos' : myNet < 0 ? 'text-neg' : '')}>
+          {myNet === 0 ? 'Settled up' : `${myNet > 0 ? 'You’re owed' : 'You owe'} ${inr(Math.abs(myNet))}`}
+        </p>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Members ({group.members.length})</CardTitle>
-        </CardHeader>
-        <CardContent className="pt-0">
-          <GroupMembersManager
-            groupId={id}
-            members={group.members}
-            currentUserId={session.userId}
-            canManageMembers={canManageMembers}
-          />
-        </CardContent>
-      </Card>
+        {gl.transfers.length > 0 && (
+          <div className="mt-4 space-y-2 border-t border-line/[0.07] pt-4">
+            {[...mine, ...others].map((t) => {
+              const involvesMe = t.from === userId || t.to === userId
+              const friendId = t.from === userId ? t.to : t.from
+              const friend = gl.members.find((m) => m.id === friendId)
+              return (
+                <div key={`${t.from}-${t.to}`} className="flex items-center gap-2 text-[14px]">
+                  <span className={cn('font-medium', !involvesMe && 'text-muted')}>{name(t.from)}</span>
+                  <ArrowRight size={14} className="text-faint" />
+                  <span className={cn('flex-1 font-medium', !involvesMe && 'text-muted')}>{name(t.to)}</span>
+                  <span className={cn('num font-semibold', !involvesMe ? 'text-muted' : t.to === userId ? 'text-pos' : 'text-neg')}>{inr(t.amount)}</span>
+                  {involvesMe && friend && (
+                    <SettleUp
+                      variant="secondary"
+                      label="Settle"
+                      className="h-8 rounded-xl px-3 text-[13px]"
+                      friend={{ id: friend.id, name: friend.displayName, upiId: friend.upiId }}
+                      net={t.to === userId ? t.amount : -t.amount}
+                      methods={methods}
+                      groupId={id}
+                    />
+                  )}
+                </div>
+              )
+            })}
+            <p className="pt-1 text-[12px] text-faint">Simplified to the fewest payments. Totals stay the same.</p>
+          </div>
+        )}
+      </div>
 
-      <ExpenseListWithFilters
-        expenses={formattedExpenses}
-        settlements={formattedSettlements}
-        members={formattedMembers}
+      <Link href={`/add?group=${id}`} className="pressable flex h-12 w-full items-center justify-center gap-2 rounded-2xl bg-ink font-medium text-ink-fg">
+        <Plus size={18} /> Add expense
+      </Link>
+
+      <section className="space-y-2">
+        <h2 className="px-1 text-[15px] font-semibold">History</h2>
+        {entries.length ? (
+          <div className="card divide-y divide-line/[0.07] overflow-hidden">
+            {entries.map((e) => <EntryRow key={e.id} e={e} back={back} showLedger={false} />)}
+          </div>
+        ) : (
+          <div className="card"><EmptyState title="No expenses yet">Add the first one — rent, groceries, the cab from the airport.</EmptyState></div>
+        )}
+      </section>
+
+      <GroupMembers
         groupId={id}
-        currentUserId={session.userId}
+        inviteCode={group.inviteCode}
+        members={gl.members.map((m) => ({ id: m.id, displayName: m.displayName, isPlaceholder: m.isPlaceholder }))}
+        friends={friends.map((f) => ({ id: f.id, name: f.displayName }))}
+        me={userId}
+        canManage={group.createdById === userId || !!session.isAdmin}
       />
     </div>
   )

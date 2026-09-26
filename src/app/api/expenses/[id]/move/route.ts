@@ -15,7 +15,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   try {
     const updated = await ledger.moveExpense(prisma, {
       expenseId: id, userId: session.userId, groupId: body.groupId || null,
-      description: body.description?.trim() || undefined, category: body.category || undefined,
+      description: body.description?.trim() || undefined, category: body.category || undefined, needLevel: body.needLevel,
     })
     if (!updated.group.isPersonal) {
       await notifyExpenseSplitMembers({ prisma, expense: updated, group: updated.group, excludeUserIds: [session.userId] })

@@ -41,3 +41,5 @@ next-env.d.ts
 # databases
 *.db
 *.db-journal
+/.claude/launch.json
+/.next-build/

@@ -1,10 +1,18 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { hashPassword, getSession } from '@/lib/auth'
+import { rateLimited } from '@/lib/rate-limit'
 
 export async function POST(request: NextRequest) {
   try {
-    const { username, password, displayName } = await request.json()
+    const ip = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || 'local'
+    if (rateLimited(`register:${ip}`, 8, 60 * 60e3)) {
+      return NextResponse.json({ error: 'Too many sign-ups from here — try later' }, { status: 429 })
+    }
+    const body = await request.json()
+    const username = String(body.username || '').trim().toLowerCase().replace(/^@/, '')
+    const password = String(body.password || '')
+    const displayName = String(body.displayName || '').trim().replace(/\s+/g, ' ').slice(0, 40)
 
     // Validation
     if (!username || !password || !displayName) {
@@ -14,9 +22,9 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    if (username.length < 3) {
+    if (!/^[a-z0-9_.]{3,24}$/.test(username)) {
       return NextResponse.json(
-        { error: 'Username must be at least 3 characters' },
+        { error: 'Username: 3–24 letters, numbers, dots or underscores' },
         { status: 400 }
       )
     }

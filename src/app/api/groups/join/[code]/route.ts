@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { getSession } from '@/lib/auth'
+/* eslint-disable @typescript-eslint/no-require-imports */
+const ledger = require('@/lib/ledger')
 
 // POST /api/groups/join/[code] - Join group via invite code
 export async function POST(
@@ -20,8 +22,17 @@ export async function POST(
       where: { inviteCode: code.toUpperCase() },
     })
 
-    if (!group || group.isPersonal || group.deletedAt) {
+    if (!group || group.isPersonal || group.isDirect || group.deletedAt) {
       return NextResponse.json({ error: 'Invalid invite code' }, { status: 404 })
+    }
+
+    // "I'm Rahul": take over a placeholder member of this group
+    const body = await request.json().catch(() => ({}))
+    if (body?.claimPlaceholderId) {
+      const ph = await prisma.user.findFirst({
+        where: { id: body.claimPlaceholderId, isPlaceholder: true, groupMemberships: { some: { groupId: group.id } } },
+      })
+      if (ph && ph.addedById !== session.userId) await ledger.mergeUsers(prisma, ph.id, session.userId)
     }
 
     // Check if already a member
@@ -32,7 +43,7 @@ export async function POST(
     })
 
     if (existingMembership) {
-      return NextResponse.json({ error: 'Already a member of this group', groupId: group.id }, { status: 400 })
+      return NextResponse.json({ success: true, groupId: group.id, groupName: group.name })
     }
 
     // Add as member

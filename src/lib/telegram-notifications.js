@@ -38,7 +38,7 @@ async function sendReviewPrompt({ prisma, userId, expense }) {
   const link = await prisma.telegramLink.findUnique({ where: { userId }, select: { telegramId: true } });
   if (!link?.telegramId) return { sent: false, reason: 'telegram_not_linked' };
   const groups = await prisma.group.findMany({
-    where: { deletedAt: null, isPersonal: false, members: { some: { userId } } },
+    where: { deletedAt: null, isPersonal: false, isDirect: false, members: { some: { userId } } },
     select: { id: true, name: true },
     orderBy: { createdAt: 'asc' },
   });
@@ -126,7 +126,7 @@ function formatExpenseParticipantMessage({ expense, group, split, paidByName }) 
   return [
     '💸 New FairShare expense',
     `${paidByName} added ${expense.description} - ${formatAmount(expense.amount)}`,
-    `Group: ${group.name}`,
+    group.isDirect ? 'Between you two' : `Group: ${group.name}`,
     `Your share: ${formatAmount(split.amount)}`,
   ].join('\n');
 }

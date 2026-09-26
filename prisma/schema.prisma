@@ -22,6 +22,12 @@ model User {
   linkCode         String?   @unique // one-time Telegram link code
   linkCodeExpires  DateTime?
 
+  // Friends who haven't signed up yet: a placeholder user owned by whoever added them.
+  // They claim it (set username + password) via /claim/[claimCode].
+  isPlaceholder    Boolean   @default(false)
+  claimCode        String?   @unique
+  addedById        String?
+
   // Relations
   groupMemberships GroupMember[]
   expensesPaid     Expense[]       @relation("PaidBy")
@@ -32,6 +38,40 @@ model User {
   activities       Activity[]
   telegramLink     TelegramLink?
   payeeRules       PayeeRule[]
+  paymentMethods   PaymentMethod[]
+  aiCalls          AiCall[]
+}
+
+// How you paid: "PhonePe", "HDFC credit card", "Cash"…  Per user, reorderable.
+model PaymentMethod {
+  id         String    @id @default(cuid())
+  userId     String
+  name       String
+  kind       String    @default("upi") // upi | card | cash | bank | other
+  sortOrder  Int       @default(0)
+  archivedAt DateTime?
+  createdAt  DateTime  @default(now())
+
+  user     User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expenses Expense[]
+
+  @@index([userId])
+}
+
+// One row per natural-language parse, for rate limiting and debugging bad parses.
+model AiCall {
+  id        String   @id @default(cuid())
+  userId    String
+  input     String
+  output    String?
+  model     String
+  ms        Int
+  ok        Boolean
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
 }
 
 model TelegramLink {
@@ -53,6 +93,7 @@ model Group {
   createdAt   DateTime  @default(now())
   deletedAt   DateTime? // Soft delete
   isPersonal  Boolean   @default(false) // hidden single-member ledger for personal expenses
+  isDirect    Boolean   @default(false) // hidden two-member ledger for 1:1 friend expenses
 
   // Relations
   members     GroupMember[]
@@ -94,13 +135,21 @@ model Expense {
   externalRef String?   // UPI ref no. for de-dupe
   reviewMsgId String?   // Telegram message id of the review prompt
 
+  // Personal-finance fields (from the payer's point of view)
+  needLevel       String?  // essential | semi | luxury
+  paymentMethodId String?
+  notes           String?
+  splitType       String   @default("equal") // equal | exact | percent | shares
+
   // Relations
   group     Group          @relation(fields: [groupId], references: [id], onDelete: Cascade)
   paidBy    User           @relation("PaidBy", fields: [paidById], references: [id])
   createdBy User           @relation("CreatedBy", fields: [createdById], references: [id])
   splits    ExpenseSplit[]
+  paymentMethod PaymentMethod? @relation(fields: [paymentMethodId], references: [id], onDelete: SetNull)
 
   @@index([externalRef])
+  @@index([groupId, date])
 }
 
 // Remembers what a payee usually is ("SWIGGY" -> Food / "Swiggy")

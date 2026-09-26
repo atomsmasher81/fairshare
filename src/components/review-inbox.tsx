@@ -1,31 +1,39 @@
 'use client'
 
 import { useState } from 'react'
+import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { formatAmount } from '@/lib/utils'
-import type { LedgerOption } from './quick-add'
+import { Inbox, X } from 'lucide-react'
+import { inr, NEEDS, NEED_META, relativeTime } from '@/lib/format'
+import { toast } from '@/components/kit'
 
 interface Item { id: string; description: string; amount: number; date: string; payee: string | null }
 
-export function ReviewInbox({ items, ledgers }: { items: Item[]; ledgers: LedgerOption[] }) {
+/**
+ * Payments captured automatically (bank SMS / Telegram) land here until you say what they were.
+ * One tap on a type files it as personal and remembers the payee for next time.
+ */
+export function ReviewInbox({ items }: { items: Item[] }) {
   const router = useRouter()
   const [names, setNames] = useState<Record<string, string>>({})
-  const [busy, setBusy] = useState<string | null>(null)
   const [done, setDone] = useState<Set<string>>(new Set())
 
-  const act = async (id: string, groupId: string | null | 'delete') => {
-    setBusy(id)
-    const res = groupId === 'delete'
-      ? await fetch(`/api/expenses/${id}`, { method: 'DELETE' })
-      : await fetch(`/api/expenses/${id}/move`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ groupId, description: names[id] }),
-        })
-    setBusy(null)
+  const finish = (id: string) => { setDone((d) => new Set(d).add(id)); router.refresh() }
+
+  const file = async (id: string, needLevel: string) => {
+    const res = await fetch(`/api/expenses/${id}/move`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ groupId: null, needLevel, description: names[id] }),
+    })
+    if (res.ok) finish(id)
+    else toast('Couldn’t save', { tone: 'error' })
+  }
+  const dismiss = async (id: string) => {
+    const res = await fetch(`/api/expenses/${id}`, { method: 'DELETE' })
     if (res.ok) {
-      setDone((d) => new Set(d).add(id))
-      router.refresh()
+      finish(id)
+      toast('Removed', { action: { label: 'Undo', run: async () => { await fetch(`/api/expenses/${id}/restore`, { method: 'POST' }); router.refresh() } } })
     }
   }
 
@@ -33,41 +41,41 @@ export function ReviewInbox({ items, ledgers }: { items: Item[]; ledgers: Ledger
   if (!visible.length) return null
 
   return (
-    <section className="rounded-2xl border border-[rgba(245,78,0,0.25)] bg-[rgba(245,78,0,0.05)] p-4">
-      <div className="mb-3 flex items-baseline justify-between">
-        <h2 className="font-semibold">📥 To sort ({visible.length})</h2>
-        <span className="text-xs text-[var(--muted-foreground)]">Auto-captured from UPI · remembered next time</span>
+    <section className="space-y-2">
+      <div className="flex items-center gap-2 px-1">
+        <Inbox size={16} className="text-neg" />
+        <h2 className="text-[15px] font-semibold">To sort <span className="text-muted">· {visible.length}</span></h2>
       </div>
-      <ul className="space-y-3">
+      <div className="card divide-y divide-line/[0.07] overflow-hidden">
         {visible.map((i) => (
-          <li key={i.id} className="rounded-xl bg-white/70 p-3">
-            <div className="flex items-center justify-between gap-3">
+          <div key={i.id} className="px-4 py-3">
+            <div className="flex items-center gap-3">
               <input
                 defaultValue={i.description}
                 onChange={(e) => setNames((n) => ({ ...n, [i.id]: e.target.value }))}
-                className="min-w-0 flex-1 bg-transparent font-medium outline-none"
+                className="min-w-0 flex-1 bg-transparent text-[15px] font-medium outline-none"
+                aria-label="Description"
               />
-              <span className="font-semibold tabular-nums">{formatAmount(i.amount)}</span>
-            </div>
-            <p className="mt-0.5 text-xs text-[var(--muted-foreground)]">
-              {new Date(i.date).toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' })}
-              {i.payee ? ` · ${i.payee}` : ''}
-            </p>
-            <div className="mt-2 flex flex-wrap gap-1.5">
-              {ledgers.map((l) => (
-                <button key={l.id ?? 'p'} disabled={busy === i.id} onClick={() => act(i.id, l.id)}
-                  className="rounded-full border border-[var(--border)] bg-white px-3 py-1 text-sm hover:border-[var(--foreground)]">
-                  {l.id ? `👥 ${l.name}` : '🙋 Personal'}
-                </button>
-              ))}
-              <button disabled={busy === i.id} onClick={() => act(i.id, 'delete')}
-                className="rounded-full px-3 py-1 text-sm text-[var(--muted-foreground)] hover:text-[var(--danger)]">
-                Not an expense
+              <span className="num font-semibold">{inr(i.amount)}</span>
+              <button onClick={() => dismiss(i.id)} className="-mr-1 flex h-7 w-7 items-center justify-center rounded-full text-faint hover:bg-sunken hover:text-fg" aria-label="Not an expense">
+                <X size={15} />
               </button>
             </div>
-          </li>
+            <p className="mt-0.5 text-[12.5px] text-muted">{relativeTime(i.date)}{i.payee ? ` · ${i.payee}` : ''}</p>
+            <div className="mt-2.5 flex flex-wrap gap-1.5">
+              {NEEDS.map((n) => (
+                <button key={n} onClick={() => file(i.id, n)}
+                  className="pressable inline-flex h-8 items-center gap-1.5 rounded-full border border-line/10 px-3 text-[13px]">
+                  <span className="h-2 w-2 rounded-full" style={{ background: NEED_META[n].color }} />{NEED_META[n].short}
+                </button>
+              ))}
+              <Link href={`/expense/${i.id}?back=/home`} className="inline-flex h-8 items-center rounded-full px-3 text-[13px] text-muted hover:text-fg">
+                Split / edit…
+              </Link>
+            </div>
+          </div>
         ))}
-      </ul>
+      </div>
     </section>
   )
 }

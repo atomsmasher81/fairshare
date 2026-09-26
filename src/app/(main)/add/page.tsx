@@ -1,41 +1,35 @@
-import { redirect } from 'next/navigation'
-import Link from 'next/link'
-import { getSession } from '@/lib/auth'
-import { QuickAdd } from '@/components/quick-add'
-import { getLedgerOptions, getRecentDescriptions } from '@/lib/server-data'
+import { ExpenseEditor } from '@/components/expense-editor'
+import { editorOptions, requireUserId } from '@/lib/queries'
+import { todayKey } from '@/lib/format'
 
 export const dynamic = 'force-dynamic'
+export const metadata = { title: 'Add expense' }
 
-export default async function AddPage() {
-  const session = await getSession()
-  if (!session.isLoggedIn || !session.userId) redirect('/login')
-  const userId = session.userId
-  const [{ ledgers, defaultId }, recent] = await Promise.all([getLedgerOptions(userId), getRecentDescriptions(userId, 12)])
-  const shared = ledgers.filter((l) => l.id)
+export default async function AddPage({ searchParams }: { searchParams: Promise<{ friend?: string; group?: string; draft?: string }> }) {
+  const userId = await requireUserId()
+  const sp = await searchParams
+  const options = await editorOptions(userId)
+  const friend = sp.friend && options.friends.some((f) => f.id === sp.friend) ? sp.friend : null
+  const group = sp.group && options.groups.some((g) => g.id === sp.group) ? sp.group : null
+  const back = friend ? `/friends/${friend}` : group ? `/groups/${group}` : '/home'
 
   return (
-    <div className="mx-auto max-w-lg space-y-6">
-      <h1 className="text-2xl font-semibold">Add expense</h1>
-      <div className="rounded-3xl border border-[var(--border)] bg-[var(--card)] p-5 shadow-[var(--shadow-card)]">
-        <QuickAdd ledgers={ledgers} defaultId={defaultId} recent={recent} autoFocus />
-      </div>
-      <div className="space-y-2 text-sm text-[var(--muted-foreground)]">
-        <p><b>Tips</b> — amount can go first or last: <code>20 milk</code>, <code>milk 20</code>, <code>rent 30,390</code></p>
-        <p><code>@groupname</code> splits it equally in that group, <code>#me</code> keeps it personal.</p>
-        <p>Paste a whole bank SMS here and it’ll read the amount &amp; payee.</p>
-      </div>
-      {shared.length > 0 && (
-        <div className="space-y-2">
-          <p className="text-sm font-medium">Need unequal split or someone else paid?</p>
-          <div className="flex flex-wrap gap-2">
-            {shared.map((l) => (
-              <Link key={l.id} href={`/groups/${l.id}/add`} className="rounded-full border border-[var(--border)] px-3 py-1 text-sm">
-                Detailed add in {l.name} →
-              </Link>
-            ))}
-          </div>
-        </div>
-      )}
-    </div>
+    <ExpenseEditor
+      options={options}
+      backHref={back}
+      fromDraft={sp.draft === '1'}
+      initial={{
+        description: '',
+        amount: 0,
+        needLevel: null,
+        paymentMethodId: options.lastMethodId,
+        date: todayKey(),
+        target: group ? { type: 'group', id: group } : friend ? { type: 'friends', ids: [friend] } : { type: 'personal' },
+        paidById: userId,
+        splitMode: 'equal',
+        participants: null,
+        splits: null,
+      }}
+    />
   )
 }

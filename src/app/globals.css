@@ -2,65 +2,137 @@
 @tailwind components;
 @tailwind utilities;
 
+/*
+ * Tokens are space-separated RGB so Tailwind can apply opacity (bg-fg/5 etc).
+ * Warm paper in light mode, warm charcoal in dark. Money colours: green = owed to you,
+ * orange = you owe (a nudge, not an alarm). Need levels get their own quiet hues.
+ */
 :root {
-  --background: #f2f1ed;
-  --foreground: #26251e;
-  --card: #f7f6f1;
-  --surface: #efede7;
-  --surface-strong: #e7e4dc;
-  --input: rgba(255, 255, 255, 0.58);
-  --muted-foreground: rgba(38, 37, 30, 0.62);
-  --border: rgba(38, 37, 30, 0.11);
-  --border-strong: rgba(38, 37, 30, 0.22);
-  --accent: #f54e00;
-  --accent-strong: #df4700;
-  --success: #1f8a65;
-  --success-soft: rgba(31, 138, 101, 0.1);
-  --danger: #cf2d56;
-  --danger-soft: rgba(207, 45, 86, 0.1);
-  --danger-border: rgba(207, 45, 86, 0.16);
-  --shadow-card: 0 18px 48px rgba(0, 0, 0, 0.07), 0 2px 0 rgba(38, 37, 30, 0.03);
+  --bg: 246 245 241;
+  --card: 255 255 253;
+  --sunken: 237 235 229;
+  --raised: 255 255 253;
+  --fg: 28 27 23;
+  --muted: 112 109 100;
+  --faint: 160 157 148;
+  --line: 28 27 23;
+  --ink: 28 27 23;
+  --ink-fg: 250 249 246;
+  --pos: 22 128 90;
+  --neg: 210 105 20;
+  --danger: 200 45 70;
+  --essential: 62 116 170;
+  --semi: 190 140 30;
+  --luxury: 160 80 180;
+  --shadow-soft: 0 1px 2px rgb(28 27 23 / 0.04), 0 8px 24px rgb(28 27 23 / 0.05);
+  --shadow-float: 0 10px 40px rgb(28 27 23 / 0.14), 0 2px 6px rgb(28 27 23 / 0.06);
+  color-scheme: light;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: 17 17 15;
+    --card: 28 27 24;
+    --sunken: 38 37 33;
+    --raised: 62 60 55;
+    --fg: 240 238 231;
+    --muted: 160 156 146;
+    --faint: 112 109 101;
+    --line: 240 238 231;
+    --ink: 240 238 231;
+    --ink-fg: 20 20 18;
+    --pos: 70 190 140;
+    --neg: 240 150 70;
+    --danger: 240 100 120;
+    --essential: 110 160 220;
+    --semi: 225 180 70;
+    --luxury: 200 130 220;
+    --shadow-soft: 0 0 0 1px rgb(255 255 255 / 0.04);
+    --shadow-float: 0 12px 40px rgb(0 0 0 / 0.5), 0 0 0 1px rgb(255 255 255 / 0.06);
+    color-scheme: dark;
+  }
+}
+
+:root[data-theme="dark"] {
+  --bg: 17 17 15;
+  --card: 28 27 24;
+  --sunken: 38 37 33;
+  --raised: 62 60 55;
+  --fg: 240 238 231;
+  --muted: 160 156 146;
+  --faint: 112 109 101;
+  --line: 240 238 231;
+  --ink: 240 238 231;
+  --ink-fg: 20 20 18;
+  --pos: 70 190 140;
+  --neg: 240 150 70;
+  --danger: 240 100 120;
+  --essential: 110 160 220;
+  --semi: 225 180 70;
+  --luxury: 200 130 220;
+  --shadow-soft: 0 0 0 1px rgb(255 255 255 / 0.04);
+  --shadow-float: 0 12px 40px rgb(0 0 0 / 0.5), 0 0 0 1px rgb(255 255 255 / 0.06);
+  color-scheme: dark;
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+  -webkit-tap-highlight-color: transparent;
 }
 
 body {
-  color: var(--foreground);
-  background: var(--background);
-  font-family: Arial, Helvetica, sans-serif;
-  letter-spacing: -0.01em;
-}
-
-a {
-  transition: color 150ms ease, opacity 150ms ease, border-color 150ms ease, background-color 150ms ease;
+  background: rgb(var(--bg));
+  color: rgb(var(--fg));
+  font-feature-settings: "ss01", "cv11";
+  letter-spacing: -0.006em;
+  overscroll-behavior-y: none;
 }
 
 * {
-  border-color: var(--border);
+  border-color: rgb(var(--line) / 0.09);
 }
 
 ::selection {
-  background: rgba(245, 78, 0, 0.16);
+  background: rgb(var(--fg) / 0.12);
 }
 
-@layer base {
-  h1, h2, h3, h4 {
-    letter-spacing: -0.03em;
+input, textarea, select, button {
+  font: inherit;
+  color: inherit;
+}
+
+/* iOS zooms into inputs under 16px */
+input, textarea, select {
+  font-size: max(16px, 1em);
+}
+
+@layer components {
+  .card {
+    @apply rounded-3xl bg-card;
+    box-shadow: var(--shadow-soft);
+  }
+  .hairline {
+    @apply border-line/[0.08];
+  }
+  .label {
+    @apply text-[12px] font-medium uppercase tracking-[0.08em] text-muted;
+  }
+  .num {
+    font-variant-numeric: tabular-nums;
+    letter-spacing: -0.02em;
+  }
+  .field {
+    @apply h-12 w-full rounded-2xl border border-line/10 bg-card px-4 outline-none transition placeholder:text-faint focus:border-line/25;
+  }
+  .pressable {
+    @apply transition-transform duration-100 active:scale-[0.97];
   }
 }
 
 @layer utilities {
-  .text-balance {
-    text-wrap: balance;
-  }
-
-  .app-shell {
-    @apply mx-auto w-full max-w-6xl px-4 sm:px-6 lg:px-8;
-  }
-
-  .eyebrow {
-    @apply text-[11px] font-medium uppercase tracking-[0.14em] text-[var(--muted-foreground)];
-  }
-
-  .panel-grid {
-    @apply grid gap-4 md:gap-5;
-  }
+  .no-scrollbar::-webkit-scrollbar { display: none; }
+  .no-scrollbar { scrollbar-width: none; }
+  .pb-safe { padding-bottom: env(safe-area-inset-bottom); }
+  .pt-safe { padding-top: env(safe-area-inset-top); }
+  .text-balance { text-wrap: balance; }
 }

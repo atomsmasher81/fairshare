@@ -1,4 +1,5 @@
 import { prisma } from '@/lib/prisma'
+import { draftFromText, loadContext, saveDraft } from '@/lib/entry'
 /* eslint-disable @typescript-eslint/no-require-imports */
 const ledger = require('@/lib/ledger')
 const { notifyExpenseSplitMembers, sendTelegramUserNotification, sendReviewPrompt } = require('@/lib/telegram-notifications')
@@ -55,11 +56,27 @@ export async function capture(input: CaptureInput): Promise<CaptureResult> {
       return { ok: true, status: 200, message: r.known ? r.message : `📥 ${ledger.formatINR(r.expense.amount)} to ${r.expense.description} — saved, tap to sort`, expense: slim(r.expense) }
     }
 
-    const r = await ledger.addFromText(prisma, { userId, text: raw, source: source || 'web', groupId, groupName, category, date })
-    if (notify && !r.expense.group.isPersonal) {
-      await notifyExpenseSplitMembers({ prisma, expense: r.expense, group: r.expense.group, excludeUserIds: [userId] })
+    const ctx = await loadContext(userId)
+    const { draft, error } = await draftFromText(raw, ctx)
+    if (!draft) return { ok: false, status: 422, message: error || 'Couldn’t understand that' }
+    // Old shortcuts pass the ledger explicitly — honour it.
+    const explicit = groupId
+      ? ctx.groups.find((g) => g.id === groupId)
+      : groupName ? ctx.groups.find((g) => g.name.toLowerCase() === groupName.toLowerCase()) : null
+    if (groupName && ledger.PERSONAL_TAGS.has(groupName.toLowerCase()) && draft.kind === 'expense') {
+      draft.groupId = null; draft.friendIds = []; draft.splitMode = 'equal'; draft.splits = null; draft.paidById = userId
+    } else if (explicit && draft.kind === 'expense') {
+      draft.groupId = explicit.id; draft.groupName = explicit.name; draft.friendIds = []
+    } else if ((groupId || groupName) && !explicit) {
+      return { ok: false, status: 404, message: 'Group not found' }
     }
-    return { ok: true, status: 200, message: r.message, expense: slim(r.expense) }
+    if (category) draft.category = category
+    if (input.date) draft.date = date.toISOString()
+    const saved = await saveDraft(userId, draft, source || 'shortcut')
+    if (notify && saved.expense && !saved.expense.group.isPersonal) {
+      await notifyExpenseSplitMembers({ prisma, expense: saved.expense, group: saved.expense.group, excludeUserIds: [userId] })
+    }
+    return { ok: true, status: 200, message: saved.message, expense: saved.expense ? slim(saved.expense) : undefined }
   } catch (e: unknown) {
     const err = e as { publicMessage?: string; status?: number }
     if (err.publicMessage) return { ok: false, status: err.status || 400, message: err.publicMessage }
@@ -73,5 +90,6 @@ function slim(e: any) {
   return {
     id: e.id, description: e.description, amount: e.amount, category: e.category, date: e.date,
     group: e.group?.isPersonal ? 'Personal' : e.group?.name, needsReview: e.needsReview,
+    needLevel: e.needLevel, method: e.paymentMethod?.name ?? null,
   }
 }

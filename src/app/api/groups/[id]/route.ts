@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { getSession } from '@/lib/auth'
+import { groupLedger } from '@/lib/queries'
 
 // GET /api/groups/[id] - Get group details
 export async function GET(
@@ -86,14 +87,18 @@ export async function DELETE(
       return NextResponse.json({ error: 'Not a member of this group' }, { status: 403 })
     }
 
-    // Check if user is the only member
+    const gl = await groupLedger(id)
+    if (gl && (gl.net.get(session.userId) || 0) !== 0) {
+      return NextResponse.json({ error: 'Settle up before leaving — you still have a balance here' }, { status: 400 })
+    }
+
     const memberCount = await prisma.groupMember.count({
       where: { groupId: id },
     })
 
     if (memberCount === 1) {
-      // Delete the entire group if last member
-      await prisma.group.delete({ where: { id } })
+      // Last one out: archive the group (soft delete keeps history recoverable)
+      await prisma.group.update({ where: { id }, data: { deletedAt: new Date() } })
       return NextResponse.json({ success: true, groupDeleted: true })
     }
 

@@ -1,66 +1,99 @@
-import { redirect } from 'next/navigation'
 import Link from 'next/link'
-import { prisma } from '@/lib/prisma'
-import { getSession } from '@/lib/auth'
-import { formatAmount } from '@/lib/utils'
-import { SettleButton } from '@/components/settle-button'
-import { ledger } from '@/lib/server-data'
+import { Plus, Users } from 'lucide-react'
+import { balances, groupsWithBalance, requireUserId } from '@/lib/queries'
+import { inr } from '@/lib/format'
+import { Avatar, BalanceLine, EmptyState, PageHeader } from '@/components/kit'
+import { AddFriendButton } from '@/components/friends-header'
+import { cn } from '@/lib/utils'
 
 export const dynamic = 'force-dynamic'
+export const metadata = { title: 'Friends' }
 
-export default async function FriendsPage() {
-  const session = await getSession()
-  if (!session.isLoggedIn || !session.userId) redirect('/login')
-  const userId = session.userId
-  const [friends, me] = await Promise.all([
-    ledger.friendBalances(prisma, userId),
-    prisma.user.findUnique({ where: { id: userId }, select: { upiId: true } }),
-  ])
+export default async function FriendsPage({ searchParams }: { searchParams: Promise<{ tab?: string }> }) {
+  const userId = await requireUserId()
+  const tab = (await searchParams).tab === 'groups' ? 'groups' : 'friends'
+  const [bal, groups] = await Promise.all([balances(userId), groupsWithBalance(userId)])
+  const friends = [...bal.friends].sort((a, b) =>
+    (b.net !== 0 ? 1 : 0) - (a.net !== 0 ? 1 : 0) || Math.abs(b.net) - Math.abs(a.net) || a.user.displayName.localeCompare(b.user.displayName))
 
   return (
-    <div className="mx-auto max-w-2xl space-y-5">
-      <h1 className="text-2xl font-semibold">Friends</h1>
-      {!me?.upiId && (
-        <Link href="/settings" className="block rounded-2xl border border-dashed border-[var(--border-strong)] p-3 text-sm text-[var(--muted-foreground)]">
-          Add your UPI ID in Settings so friends can pay you with one tap →
-        </Link>
-      )}
-      {friends.length === 0 && (
-        <p className="rounded-2xl border border-[var(--border)] bg-[var(--card)] p-6 text-center text-[var(--muted-foreground)]">
-          No friends yet. Create a group and share the invite link.
-        </p>
-      )}
-      <ul className="space-y-3">
-        {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
-        {friends.map((f: any) => (
-          <li key={f.user.id} className="rounded-2xl border border-[var(--border)] bg-[var(--card)] p-4">
-            <div className="flex items-center justify-between gap-3">
-              <p className="font-medium">{f.user.displayName}</p>
-              <p className={`font-semibold tabular-nums ${f.net > 0 ? 'text-[var(--success)]' : f.net < 0 ? 'text-[var(--danger)]' : 'text-[var(--muted-foreground)]'}`}>
-                {f.net > 0 ? `owes you ${formatAmount(f.net)}` : f.net < 0 ? `you owe ${formatAmount(-f.net)}` : 'settled ✓'}
-              </p>
-            </div>
-            {f.groups.length > 0 && (
-              <p className="mt-1 text-xs text-[var(--muted-foreground)]">
-                {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
-                {f.groups.map((g: any) => `${g.name}: ${g.net > 0 ? '+' : '−'}${formatAmount(Math.abs(g.net))}`).join(' · ')}
-              </p>
-            )}
-            {f.net !== 0 && (
-              <div className="mt-3">
-                <SettleButton
-                  friendId={f.user.id}
-                  friendName={f.user.displayName}
-                  net={f.net}
-                  friendHasUpi={!!f.user.upiId}
-                  myUpi={me?.upiId || null}
-                  upiLink={f.net < 0 ? ledger.upiLink({ vpa: f.user.upiId, name: f.user.displayName, amount: -f.net }) : null}
-                />
-              </div>
-            )}
-          </li>
+    <div className="space-y-5">
+      <PageHeader title="Friends" action={<AddFriendButton />} />
+
+      <div className="card grid grid-cols-2 divide-x divide-line/[0.07]">
+        <div className="p-4">
+          <p className="text-[13px] text-muted">You’re owed</p>
+          <p className={`num mt-0.5 text-[22px] font-semibold tracking-[-0.03em] ${bal.owed ? 'text-pos' : 'text-faint'}`}>{inr(bal.owed)}</p>
+        </div>
+        <div className="p-4">
+          <p className="text-[13px] text-muted">You owe</p>
+          <p className={`num mt-0.5 text-[22px] font-semibold tracking-[-0.03em] ${bal.owe ? 'text-neg' : 'text-faint'}`}>{inr(bal.owe)}</p>
+        </div>
+      </div>
+
+      <div className="flex rounded-2xl bg-sunken p-1">
+        {(['friends', 'groups'] as const).map((t) => (
+          <Link key={t} href={t === 'groups' ? '/friends?tab=groups' : '/friends'} replace
+            className={cn('flex h-9 flex-1 items-center justify-center rounded-xl text-[14px] font-medium capitalize transition',
+              tab === t ? 'bg-raised text-fg shadow-[var(--shadow-soft)]' : 'text-muted')}>
+            {t}
+          </Link>
         ))}
-      </ul>
+      </div>
+
+      {tab === 'friends' ? (
+        friends.length ? (
+          <div className="card divide-y divide-line/[0.07] overflow-hidden">
+            {friends.map((f) => (
+              <Link key={f.user.id} href={`/friends/${f.user.id}`} className="flex items-center gap-3 px-4 py-3 hover:bg-fg/[0.025] active:bg-fg/[0.05]">
+                <Avatar name={f.user.displayName} id={f.user.id} />
+                <div className="min-w-0 flex-1">
+                  <p className="truncate font-medium">{f.user.displayName}</p>
+                  {f.user.isPlaceholder && <p className="text-[12.5px] text-faint">Not on FairShare yet</p>}
+                  {!f.user.isPlaceholder && f.groups.length > 1 && (
+                    <p className="truncate text-[12.5px] text-muted">across {f.groups.length} ledgers</p>
+                  )}
+                </div>
+                <BalanceLine net={f.net} className="text-right text-[14px]" />
+              </Link>
+            ))}
+          </div>
+        ) : (
+          <div className="card">
+            <EmptyState icon={<Users size={28} />} title="No friends yet">
+              Add someone by name — they don’t need an account — and start splitting.
+            </EmptyState>
+          </div>
+        )
+      ) : (
+        <div className="space-y-3">
+          {groups.length > 0 && (
+            <div className="card divide-y divide-line/[0.07] overflow-hidden">
+              {groups.map((g) => (
+                <Link key={g.id} href={`/groups/${g.id}`} className="flex items-center gap-3 px-4 py-3 hover:bg-fg/[0.025] active:bg-fg/[0.05]">
+                  <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-sunken text-[15px] font-semibold text-muted">
+                    {g.name.slice(0, 1).toUpperCase()}
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate font-medium">{g.name}</p>
+                    <p className="truncate text-[12.5px] text-muted">{g.members.length} {g.members.length === 1 ? 'member' : 'members'}</p>
+                  </div>
+                  {g.net === 0 ? <span className="text-[14px] text-muted">settled up</span> : (
+                    <span className={cn('text-right text-[14px]', g.net > 0 ? 'text-pos' : 'text-neg')}>
+                      {g.net > 0 ? 'you’re owed ' : 'you owe '}<span className="num font-semibold">{inr(Math.abs(g.net))}</span>
+                    </span>
+                  )}
+                </Link>
+              ))}
+            </div>
+          )}
+          <Link href="/groups/new" className="card flex items-center gap-3 px-4 py-3.5 text-muted hover:text-fg">
+            <span className="flex h-10 w-10 items-center justify-center rounded-2xl border border-dashed border-line/25"><Plus size={18} /></span>
+            <span className="font-medium">New group</span>
+            <span className="ml-auto text-[13px] text-faint">flat, trip, office…</span>
+          </Link>
+        </div>
+      )}
     </div>
   )
 }

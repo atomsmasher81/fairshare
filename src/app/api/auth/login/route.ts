@@ -1,9 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { verifyPassword, getSession } from '@/lib/auth'
+import { rateLimited } from '@/lib/rate-limit'
 
 export async function POST(request: NextRequest) {
   try {
+    const ip = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || 'local'
+    if (rateLimited(`login:${ip}`, 10, 10 * 60e3)) {
+      return NextResponse.json({ error: 'Too many attempts — wait a few minutes' }, { status: 429 })
+    }
     const { username, password } = await request.json()
 
     if (!username || !password) {
@@ -15,10 +20,10 @@ export async function POST(request: NextRequest) {
 
     // Find user
     const user = await prisma.user.findUnique({
-      where: { username: username.toLowerCase() },
+      where: { username: String(username).trim().toLowerCase().replace(/^@/, '') },
     })
 
-    if (!user) {
+    if (!user || user.isPlaceholder || !user.passwordHash) {
       return NextResponse.json(
         { error: 'Invalid username or password' },
         { status: 401 }

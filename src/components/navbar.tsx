@@ -1,72 +1,75 @@
 'use client'
 
 import Link from 'next/link'
-import { usePathname, useRouter } from 'next/navigation'
+import { usePathname } from 'next/navigation'
+import { Home, ListOrdered, Plus, Users, CircleUser } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
-interface NavbarProps {
-  username: string
-  isAdmin: boolean
-}
-
 const TABS = [
-  { href: '/dashboard', label: 'Home', icon: '⌂' },
-  { href: '/friends', label: 'Friends', icon: '⇄' },
-  { href: '/add', label: 'Add', icon: '+', primary: true },
-  { href: '/spending', label: 'Spending', icon: '₹' },
-  { href: '/settings', label: 'Settings', icon: '⚙' },
+  { href: '/home', label: 'Home', icon: Home },
+  { href: '/activity', label: 'Activity', icon: ListOrdered },
+  { href: '/add', label: 'Add', icon: Plus, primary: true },
+  { href: '/friends', label: 'Friends', icon: Users, also: ['/groups'] },
+  { href: '/settings', label: 'You', icon: CircleUser },
 ]
 
-export function Navbar({ username, isAdmin }: NavbarProps) {
-  const pathname = usePathname()
-  const router = useRouter()
-  const active = (href: string) => pathname === href || (href !== '/dashboard' && pathname.startsWith(href))
+/** Where "+" should prefill: on a friend or group page, add straight into it. */
+function addHref(pathname: string) {
+  const friend = pathname.match(/^\/friends\/([^/]+)$/)?.[1]
+  if (friend) return `/add?friend=${friend}`
+  const group = pathname.match(/^\/groups\/([^/]+)$/)?.[1]
+  if (group && group !== 'new') return `/add?group=${group}`
+  return '/add'
+}
 
-  const logout = async () => {
-    await fetch('/api/auth/logout', { method: 'POST' })
-    router.push('/login')
-    router.refresh()
-  }
+export function Navbar() {
+  const pathname = usePathname()
+  if (pathname.startsWith('/add') || pathname.startsWith('/expense/')) return null
+  const active = (t: (typeof TABS)[number]) =>
+    pathname === t.href || pathname.startsWith(t.href + '/') || (t.also || []).some((p) => pathname.startsWith(p))
 
   return (
     <>
-      {/* Top bar */}
-      <nav className="sticky top-0 z-40 border-b border-[var(--border)] bg-[rgba(242,241,237,0.86)] backdrop-blur-xl pt-[env(safe-area-inset-top)]">
-        <div className="app-shell flex h-14 items-center justify-between gap-4">
-          <Link href="/dashboard" className="text-lg font-semibold tracking-[-0.04em]">FairShare</Link>
-          <div className="hidden items-center gap-1 md:flex">
-            {TABS.map((t) => (
+      {/* Desktop: slim top bar */}
+      <nav className="sticky top-0 z-40 hidden border-b border-line/[0.07] bg-bg/80 backdrop-blur-xl md:block">
+        <div className="mx-auto flex h-14 max-w-5xl items-center justify-between px-6">
+          <Link href="/home" className="text-[17px] font-semibold tracking-[-0.03em]">FairShare</Link>
+          <div className="flex items-center gap-1">
+            {TABS.filter((t) => !t.primary).map((t) => (
               <Link key={t.href} href={t.href}
-                className={cn('rounded-full px-3 py-1.5 text-sm',
-                  t.primary ? 'bg-[var(--accent)] text-white hover:bg-[var(--accent-strong)]'
-                    : active(t.href) ? 'bg-[var(--surface-strong)] font-medium' : 'text-[var(--muted-foreground)] hover:text-[var(--foreground)]')}>
-                {t.primary ? '+ Add' : t.label}
+                className={cn('rounded-full px-3.5 py-1.5 text-[14px] transition-colors',
+                  active(t) ? 'bg-sunken font-medium text-fg' : 'text-muted hover:text-fg')}>
+                {t.label}
               </Link>
             ))}
-            {isAdmin && <Link href="/admin" className="rounded-full px-3 py-1.5 text-sm text-[var(--muted-foreground)]">Admin</Link>}
-            <button onClick={logout} className="ml-2 rounded-full px-3 py-1.5 text-sm text-[var(--muted-foreground)] hover:text-[var(--danger)]" title={`Signed in as ${username}`}>
-              Sign out
-            </button>
+            <Link href={addHref(pathname)} className="pressable ml-2 inline-flex items-center gap-1.5 rounded-full bg-ink px-4 py-1.5 text-[14px] font-medium text-ink-fg">
+              <Plus size={16} strokeWidth={2.5} /> Add
+            </Link>
           </div>
-          <span className="text-sm text-[var(--muted-foreground)] md:hidden">@{username}</span>
         </div>
       </nav>
 
-      {/* Mobile tab bar */}
-      <nav className="fixed inset-x-0 bottom-0 z-40 border-t border-[var(--border)] bg-[rgba(247,246,241,0.95)] backdrop-blur-xl pb-[env(safe-area-inset-bottom)] md:hidden">
-        <div className="mx-auto grid max-w-md grid-cols-5">
-          {TABS.map((t) => (
-            <Link key={t.href} href={t.href} className="flex flex-col items-center justify-center gap-0.5 py-2 text-[11px]">
-              {t.primary ? (
-                <span className="-mt-5 flex h-12 w-12 items-center justify-center rounded-full bg-[var(--accent)] text-2xl text-white shadow-lg">+</span>
-              ) : (
-                <>
-                  <span className={cn('text-lg leading-none', active(t.href) ? 'text-[var(--foreground)]' : 'text-[var(--muted-foreground)]')}>{t.icon}</span>
-                  <span className={active(t.href) ? 'font-medium text-[var(--foreground)]' : 'text-[var(--muted-foreground)]'}>{t.label}</span>
-                </>
-              )}
-            </Link>
-          ))}
+      {/* Mobile: floating tab bar */}
+      <nav className="fixed inset-x-0 bottom-0 z-40 px-4 pb-[max(10px,env(safe-area-inset-bottom))] md:hidden">
+        <div className="mx-auto flex h-16 max-w-sm items-center justify-around rounded-[26px] border border-line/[0.07] bg-card/85 px-2 shadow-[var(--shadow-float)] backdrop-blur-xl">
+          {TABS.map((t) => {
+            const Icon = t.icon
+            if (t.primary) {
+              return (
+                <Link key={t.href} href={addHref(pathname)} aria-label="Add expense"
+                  className="pressable flex h-12 w-12 items-center justify-center rounded-2xl bg-ink text-ink-fg">
+                  <Icon size={24} strokeWidth={2.4} />
+                </Link>
+              )
+            }
+            const on = active(t)
+            return (
+              <Link key={t.href} href={t.href} className={cn('flex w-14 flex-col items-center gap-0.5 py-1 text-[10.5px] font-medium', on ? 'text-fg' : 'text-faint')}>
+                <Icon size={22} strokeWidth={on ? 2.3 : 1.8} />
+                {t.label}
+              </Link>
+            )
+          })}
         </div>
       </nav>
     </>

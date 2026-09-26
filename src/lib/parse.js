@@ -2,7 +2,8 @@
 // Plain JS (CommonJS) so the bot can require it without a build step.
 
 const CATEGORY_KEYWORDS = {
-  food: ['swiggy', 'zomato', 'blinkit', 'zepto', 'instamart', 'bigbasket', 'grocery', 'groceries', 'milk', 'eggs', 'egg', 'bread', 'chai', 'tea', 'coffee', 'breakfast', 'lunch', 'dinner', 'snacks', 'food', 'restaurant', 'cafe', 'paneer', 'fruits', 'vegetables', 'veggies', 'sabzi', 'dmart', 'starbucks', 'dominos', 'pizza', 'burger', 'kfc', 'mcd', 'mcdonald', 'biryani', 'water', 'juice', 'beer', 'drinks', 'bar', 'liquor'],
+  groceries: ['blinkit', 'zepto', 'instamart', 'bigbasket', 'grocery', 'groceries', 'milk', 'eggs', 'egg', 'bread', 'paneer', 'curd', 'dahi', 'atta', 'rice', 'dal', 'fruits', 'vegetables', 'veggies', 'sabzi', 'dmart', 'kirana', 'water can'],
+  food: ['swiggy', 'zomato', 'chai', 'tea', 'coffee', 'breakfast', 'lunch', 'dinner', 'snacks', 'food', 'restaurant', 'cafe', 'starbucks', 'dominos', 'pizza', 'burger', 'kfc', 'mcd', 'mcdonald', 'biryani', 'juice', 'beer', 'drinks', 'bar', 'liquor'],
   travel: ['uber', 'ola', 'rapido', 'auto', 'cab', 'taxi', 'metro', 'bus', 'train', 'irctc', 'flight', 'indigo', 'petrol', 'diesel', 'fuel', 'parking', 'toll', 'fastag', 'makemytrip', 'goibibo', 'redbus'],
   utilities: ['electricity', 'bescom', 'wifi', 'internet', 'broadband', 'airtel', 'jio', 'vi ', 'recharge', 'gas', 'cylinder', 'water bill', 'maid', 'cook', 'laundry', 'dhobi', 'society', 'maintenance'],
   rent: ['rent', 'deposit', 'brokerage'],

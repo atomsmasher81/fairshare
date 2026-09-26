@@ -1,27 +1,21 @@
 import { redirect } from 'next/navigation'
 import { getSession } from '@/lib/auth'
 import { Navbar } from '@/components/navbar'
+import { Toaster } from '@/components/kit'
+import { ServiceWorker } from '@/components/service-worker'
 
-export default async function MainLayout({
-  children,
-}: {
-  children: React.ReactNode
-}) {
+export default async function MainLayout({ children }: { children: React.ReactNode }) {
   const session = await getSession()
-  
-  if (!session.isLoggedIn) {
-    redirect('/login')
-  }
+  if (!session.isLoggedIn) redirect('/')
 
   return (
-    <div className="min-h-screen bg-transparent">
-      <Navbar 
-        username={session.username!} 
-        isAdmin={session.isAdmin || false} 
-      />
-      <main className="app-shell pb-28 pt-6 sm:pt-8 md:pb-12">
+    <div className="min-h-dvh">
+      <Navbar />
+      <main className="mx-auto w-full max-w-xl px-4 pb-32 pt-[max(20px,env(safe-area-inset-top))] sm:px-6 md:pb-16 md:pt-8">
         {children}
       </main>
+      <Toaster />
+      <ServiceWorker />
     </div>
   )
 }

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { getSession } from '@/lib/auth'
+import { groupLedger } from '@/lib/queries'
 
 // DELETE /api/groups/[id]/members/[userId] - Remove a member from a group
 export async function DELETE(
@@ -53,6 +54,11 @@ export async function DELETE(
     const targetMembership = group.members.find(member => member.userId === targetUserId)
     if (!targetMembership) {
       return NextResponse.json({ error: 'Member not found in this group' }, { status: 404 })
+    }
+
+    const gl = await groupLedger(groupId)
+    if (gl && (gl.net.get(targetUserId) || 0) !== 0) {
+      return NextResponse.json({ error: `${targetMembership.user.displayName} still has a balance here — settle up first` }, { status: 400 })
     }
 
     await prisma.$transaction(async (tx) => {
