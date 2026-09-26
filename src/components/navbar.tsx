@@ -2,6 +2,7 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
+import { useEffect, useState } from 'react'
 import { Home, ListOrdered, Plus, Users, CircleUser } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
@@ -24,9 +25,13 @@ function addHref(pathname: string) {
 
 export function Navbar() {
   const pathname = usePathname()
+  // Highlight the tab you tapped immediately, before its page has loaded
+  const [tapped, setTapped] = useState<string | null>(null)
+  useEffect(() => setTapped(null), [pathname])
   if (pathname.startsWith('/add') || pathname.startsWith('/expense/')) return null
-  const active = (t: (typeof TABS)[number]) =>
+  const matches = (t: (typeof TABS)[number]) =>
     pathname === t.href || pathname.startsWith(t.href + '/') || (t.also || []).some((p) => pathname.startsWith(p))
+  const active = (t: (typeof TABS)[number]) => (tapped ? tapped === t.href : matches(t))
 
   return (
     <>
@@ -36,7 +41,7 @@ export function Navbar() {
           <Link href="/home" className="text-[17px] font-semibold tracking-[-0.03em]">FairShare</Link>
           <div className="flex items-center gap-1">
             {TABS.filter((t) => !t.primary).map((t) => (
-              <Link key={t.href} href={t.href}
+              <Link key={t.href} href={t.href} onClick={() => setTapped(t.href)}
                 className={cn('rounded-full px-3.5 py-1.5 text-[14px] transition-colors',
                   active(t) ? 'bg-sunken font-medium text-fg' : 'text-muted hover:text-fg')}>
                 {t.label}
@@ -64,7 +69,8 @@ export function Navbar() {
             }
             const on = active(t)
             return (
-              <Link key={t.href} href={t.href} className={cn('flex w-14 flex-col items-center gap-0.5 py-1 text-[10.5px] font-medium', on ? 'text-fg' : 'text-faint')}>
+              <Link key={t.href} href={t.href} onClick={() => setTapped(t.href)}
+                className={cn('flex w-14 flex-col items-center gap-0.5 py-1 text-[10.5px] font-medium transition-transform active:scale-90', on ? 'text-fg' : 'text-faint')}>
                 <Icon size={22} strokeWidth={on ? 2.3 : 1.8} />
                 {t.label}
               </Link>
