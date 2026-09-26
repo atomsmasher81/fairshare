@@ -122,45 +122,97 @@ async function resolveUserDisplayName({ prisma, userId, user }) {
   return resolved?.displayName || resolved?.username || 'Someone';
 }
 
-function formatExpenseParticipantMessage({ expense, group, split, paidByName }) {
-  return [
-    '💸 New FairShare expense',
-    `${paidByName} added ${expense.description} - ${formatAmount(expense.amount)}`,
-    group.isDirect ? 'Between you two' : `Group: ${group.name}`,
-    `Your share: ${formatAmount(split.amount)}`,
-  ].join('\n');
+function formatINR(paise) {
+  const n = paise / 100;
+  return '₹' + n.toLocaleString('en-IN', { minimumFractionDigits: n % 1 ? 2 : 0, maximumFractionDigits: 2 });
 }
 
-async function notifyExpenseSplitMembers({ prisma, expense, group, excludeUserIds }) {
+const VERB = { added: 'added', edited: 'edited', deleted: 'deleted' };
+
+/**
+ * What this expense means for one person, in their words.
+ * { title, body, text } — title/body for push, text for Telegram.
+ */
+function describeFor({ expense, group, recipientId, actorName, payerName, action }) {
+  const share = (expense.splits || []).find((s) => s.userId === recipientId)?.amount || 0;
+  const paidByRecipient = expense.paidById === recipientId;
+  const where = group.isDirect ? '' : ` in ${group.name}`;
+  const payer = payerName.split(' ')[0];
+  let impact;
+  if (action === 'deleted') impact = 'no longer counts toward your balance';
+  else if (paidByRecipient) impact = `you paid · you're owed ${formatINR(expense.amount - share)}`;
+  else impact = `${payer} paid · your share ${formatINR(share)}`;
+  const title = `${actorName.split(' ')[0]} ${VERB[action] || 'added'} “${expense.description}”${where}`;
+  const body = `${formatINR(expense.amount)} — ${impact}`;
+  return { title, body, text: `💸 ${title}\n${body}` };
+}
+
+/**
+ * Tell everyone involved in an expense (split members + payer), except whoever made the change.
+ * Sends a push to their installed app and a Telegram message if they've linked it.
+ */
+async function notifyExpenseSplitMembers({ prisma, expense, group, excludeUserIds, action = 'added' }) {
+  const { pushToUser } = require('./push');
   const excluded = new Set((excludeUserIds || []).filter(Boolean));
-  const splits = (expense.splits || []).filter((split) => !excluded.has(split.userId));
-  const paidByName = await resolveUserDisplayName({
-    prisma,
-    userId: expense.paidById || expense.paidBy?.id,
-    user: expense.paidBy,
-  });
+  const actorId = (excludeUserIds || [])[0] || expense.createdById;
+  const recipients = Array.from(new Set([...(expense.splits || []).map((s) => s.userId), expense.paidById]))
+    .filter((id) => id && !excluded.has(id));
+  if (!recipients.length) return { attempted: 0, sent: 0 };
 
-  const results = [];
+  const actorName = await resolveUserDisplayName({ prisma, userId: actorId });
+  const payerName = await resolveUserDisplayName({ prisma, userId: expense.paidById || expense.paidBy?.id, user: expense.paidBy });
 
-  for (const split of splits) {
-    const message = formatExpenseParticipantMessage({ expense, group, split, paidByName });
-    results.push(await sendTelegramUserNotification({ prisma, userId: split.userId, message }));
+  let sent = 0;
+  for (const userId of recipients) {
+    const msg = describeFor({ expense, group, recipientId: userId, actorName, payerName, action });
+    const [tg, push] = await Promise.all([
+      sendTelegramUserNotification({ prisma, userId, message: msg.text }),
+      pushToUser(prisma, userId, {
+        title: msg.title,
+        body: msg.body,
+        url: action === 'deleted' ? '/activity' : `/expense/${expense.id}`,
+        tag: `expense-${expense.id}`,
+      }),
+    ]);
+    if (tg.sent || push.sent) sent++;
   }
+  return { attempted: recipients.length, sent };
+}
 
-  return {
-    attempted: results.length,
-    sent: results.filter((result) => result.sent).length,
-    skipped: results.filter((result) => !result.sent),
-    results,
-  };
+/** Tell the other side of a payment that it was recorded. */
+async function notifyPayment({ prisma, actorId, fromUserId, toUserId, amount }) {
+  const { pushToUser } = require('./push');
+  const recipient = actorId === fromUserId ? toUserId : fromUserId;
+  if (!recipient || recipient === actorId) return;
+  const actorName = (await resolveUserDisplayName({ prisma, userId: actorId })).split(' ')[0];
+  const title = actorId === fromUserId ? `${actorName} paid you ${formatINR(amount)}` : `${actorName} recorded your payment of ${formatINR(amount)}`;
+  const body = 'Settled up in FairShare — tap to see your balance.';
+  await Promise.all([
+    sendTelegramUserNotification({ prisma, userId: recipient, message: `✅ ${title}` }),
+    pushToUser(prisma, recipient, { title, body, url: `/friends/${actorId}`, tag: `payment-${actorId}` }),
+  ]);
+}
+
+/** You were added to a group. */
+async function notifyAddedToGroup({ prisma, actorId, userId, group }) {
+  const { pushToUser } = require('./push');
+  if (userId === actorId) return;
+  const actorName = (await resolveUserDisplayName({ prisma, userId: actorId })).split(' ')[0];
+  const title = `${actorName} added you to ${group.name}`;
+  await Promise.all([
+    sendTelegramUserNotification({ prisma, userId, message: `👥 ${title}` }),
+    pushToUser(prisma, userId, { title, body: 'Split expenses with the group in FairShare.', url: `/groups/${group.id}`, tag: `group-${group.id}` }),
+  ]);
 }
 
 module.exports = {
   reviewKeyboard,
   sendReviewPrompt,
   telegramCall,
-  formatExpenseParticipantMessage,
+  describeFor,
   notifyExpenseSplitMembers,
+  notifyPayment,
+  notifyAddedToGroup,
   resolveUserDisplayName,
   sendTelegramUserNotification,
 };

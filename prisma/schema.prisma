@@ -40,6 +40,22 @@ model User {
   payeeRules       PayeeRule[]
   paymentMethods   PaymentMethod[]
   aiCalls          AiCall[]
+  pushSubscriptions PushSubscription[]
+}
+
+// One per device that allowed notifications (installed PWA on iOS 16.4+, Android, desktop).
+model PushSubscription {
+  id        String   @id @default(cuid())
+  userId    String
+  endpoint  String   @unique
+  p256dh    String
+  auth      String
+  userAgent String?
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
 }
 
 // How you paid: "PhonePe", "HDFC credit card", "Cash"…  Per user, reorderable.

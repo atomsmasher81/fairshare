@@ -2,7 +2,7 @@ import { prisma } from '@/lib/prisma'
 import { draftFromText, loadContext, saveDraft } from '@/lib/entry'
 /* eslint-disable @typescript-eslint/no-require-imports */
 const ledger = require('@/lib/ledger')
-const { notifyExpenseSplitMembers, sendTelegramUserNotification, sendReviewPrompt } = require('@/lib/telegram-notifications')
+const { notifyExpenseSplitMembers, notifyPayment, sendTelegramUserNotification, sendReviewPrompt } = require('@/lib/telegram-notifications')
 const { parseBankMessage } = require('@/lib/parse')
 
 export interface CaptureInput {
@@ -73,6 +73,9 @@ export async function capture(input: CaptureInput): Promise<CaptureResult> {
     if (category) draft.category = category
     if (input.date) draft.date = date.toISOString()
     const saved = await saveDraft(userId, draft, source || 'shortcut')
+    if (draft.kind === 'settlement' && draft.toUserId) {
+      await notifyPayment({ prisma, actorId: userId, fromUserId: draft.paidById, toUserId: draft.toUserId, amount: draft.amount }).catch(() => {})
+    }
     if (notify && saved.expense && !saved.expense.group.isPersonal) {
       await notifyExpenseSplitMembers({ prisma, expense: saved.expense, group: saved.expense.group, excludeUserIds: [userId] })
     }

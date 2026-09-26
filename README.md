@@ -42,6 +42,16 @@ Authorization: Bearer <personal key from You → Add by voice with Siri>
 
 The older `/api/expenses/make-entry` endpoint, and the shared `FAIRSHARE_API_KEY`, still work.
 
+## Push notifications
+
+Friends get a notification on their phone when you add, edit or delete an expense with them, record a payment, or add them to a group (Telegram gets the same message if linked). One-time setup on the server:
+
+```bash
+npx web-push generate-vapid-keys   # put both keys in .env as VAPID_PUBLIC_KEY / VAPID_PRIVATE_KEY
+```
+
+Then each person turns it on under **You → Notifications**. On iPhone this needs iOS 16.4+ and the app installed to the Home Screen.
+
 ## Deploy (existing VPS)
 
 ```bash

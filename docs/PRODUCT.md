@@ -73,10 +73,11 @@ Bank SMS automation       → POST /api/capture {sms}  → To sort; payee rememb
   - A floating tab bar: Home · Activity · **+** · Friends · You. On a friend or group page, **+** pre-fills that friend or group.
   - Safe-area aware, with 16px inputs so iOS doesn't zoom.
   - On desktop the same column is used, with a slim top bar, and the keypad accepts keyboard input.
+- **Notifications.** Web Push to the installed app (iOS 16.4+ from the Home Screen, Android, desktop) plus Telegram. Everyone involved in an expense hears about adds, edits, deletes and payments, except whoever made the change. The message is written from their side ("your share ₹450", "you're owed ₹600"). Turned on per device under You.
 - **PWA.**
   - Manifest with Add / Summary / Friends shortcuts, and a service worker that caches static assets and serves an offline page. Money pages are always fetched fresh.
   - Sessions last a year, so the installed app doesn't keep signing you out.
 
 ## Not built (on purpose, for now)
 
-Budgets, charts, recurring expenses, multi-currency, receipts, comments, and push notifications. The ledger supports all of them, but none of them are essential yet.
+Budgets, charts, recurring expenses, multi-currency, receipts and comments. The ledger supports all of them, but none of them are essential yet.

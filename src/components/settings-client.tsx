@@ -292,3 +292,109 @@ export function SignOut() {
     </button>
   )
 }
+
+/* ---------- notifications ---------- */
+
+function urlBase64ToUint8Array(base64: string) {
+  const pad = '='.repeat((4 - (base64.length % 4)) % 4)
+  const raw = atob((base64 + pad).replace(/-/g, '+').replace(/_/g, '/'))
+  return Uint8Array.from(raw, (c) => c.charCodeAt(0))
+}
+
+type PushState = 'loading' | 'unsupported' | 'needs-install' | 'blocked' | 'off' | 'on'
+
+export function NotificationsSection({ publicKey }: { publicKey: string | null }) {
+  const [state, setState] = useState<PushState>('loading')
+  const [busy, setBusy] = useState(false)
+  const [isIOS, setIsIOS] = useState(false)
+
+  useEffect(() => {
+    const ios = /iphone|ipad|ipod/i.test(navigator.userAgent)
+    setIsIOS(ios)
+    const standalone = window.matchMedia('(display-mode: standalone)').matches || (navigator as unknown as { standalone?: boolean }).standalone
+    if (!('serviceWorker' in navigator) || !('PushManager' in window) || !('Notification' in window)) {
+      setState(ios && !standalone ? 'needs-install' : 'unsupported')
+      return
+    }
+    if (Notification.permission === 'denied') { setState('blocked'); return }
+    navigator.serviceWorker.getRegistration('/').then(async (reg) => {
+      const sub = await reg?.pushManager.getSubscription()
+      setState(sub ? 'on' : 'off')
+    }).catch(() => setState('off'))
+  }, [])
+
+  const enable = async () => {
+    if (!publicKey) return
+    setBusy(true)
+    try {
+      const permission = await Notification.requestPermission()
+      if (permission !== 'granted') { setState(permission === 'denied' ? 'blocked' : 'off'); return }
+      await navigator.serviceWorker.register('/sw.js')
+      const reg = await navigator.serviceWorker.ready
+      const sub = await reg.pushManager.getSubscription()
+        || await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: urlBase64ToUint8Array(publicKey) })
+      const res = await fetch('/api/push', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(sub.toJSON()) })
+      if (!res.ok) throw new Error('save failed')
+      setState('on')
+      toast('Notifications on')
+    } catch {
+      toast('Couldn’t turn on notifications', { tone: 'error' })
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const disable = async () => {
+    setBusy(true)
+    try {
+      const reg = await navigator.serviceWorker.getRegistration('/')
+      const sub = await reg?.pushManager.getSubscription()
+      if (sub) {
+        await fetch('/api/push', { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ endpoint: sub.endpoint }) })
+        await sub.unsubscribe()
+      }
+      setState('off')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const test = async () => {
+    const res = await fetch('/api/push/test', { method: 'POST' })
+    const j = await res.json().catch(() => ({}))
+    if (!j.sent) toast('Nothing was delivered — try turning notifications off and on', { tone: 'error' })
+  }
+
+  const hint: Record<PushState, React.ReactNode> = {
+    loading: '',
+    unsupported: 'This browser can’t show notifications.',
+    'needs-install': <>On iPhone, notifications only work in the installed app: Safari → Share → <b>Add to Home Screen</b>, then open FairShare from your Home Screen and come back here.</>,
+    blocked: isIOS
+      ? 'Notifications are blocked. Turn them on in iPhone Settings → Notifications → FairShare, then reopen the app.'
+      : 'Notifications are blocked for this site. Allow them in your browser’s site settings, then reload.',
+    off: 'Get a ping when a friend adds an expense with you, edits one, or records a payment.',
+    on: 'On for this device. You’ll hear about expenses and payments that involve you.',
+  }
+
+  if (!publicKey) return null
+  return (
+    <Block title="Notifications">
+      <div className="card flex items-center gap-3 p-4">
+        <p className="flex-1 text-[13.5px] text-muted">{hint[state]}</p>
+        {(state === 'off' || state === 'on') && (
+          <button
+            role="switch"
+            aria-checked={state === 'on'}
+            aria-label="Notifications"
+            disabled={busy}
+            onClick={state === 'on' ? disable : enable}
+            className={cn('relative h-8 w-[52px] shrink-0 rounded-full transition-colors disabled:opacity-50', state === 'on' ? 'bg-pos' : 'bg-fg/15')}
+          >
+            <span className={cn('absolute top-1 h-6 w-6 rounded-full bg-white shadow transition-all', state === 'on' ? 'left-[24px]' : 'left-1')} />
+          </button>
+        )}
+      </div>
+      {state === 'on' && <button onClick={test} className="px-1 text-[13px] text-muted hover:text-fg">Send a test notification</button>}
+    </Block>
+  )
+}

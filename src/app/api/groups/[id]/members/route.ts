@@ -3,6 +3,7 @@ import { prisma } from '@/lib/prisma'
 import { fail, sessionUserId, unauthorized } from '@/lib/api'
 /* eslint-disable @typescript-eslint/no-require-imports */
 const ledger = require('@/lib/ledger')
+const { notifyAddedToGroup } = require('@/lib/telegram-notifications')
 
 // POST { userId } (an existing friend) or { name } (new placeholder friend) — add to the group
 export async function POST(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -28,6 +29,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       create: { groupId, userId: friendId },
     })
     await prisma.activity.create({ data: { groupId, userId, type: 'member_added', metadata: JSON.stringify({ addedUserId: friendId }) } })
+    notifyAddedToGroup({ prisma, actorId: userId, userId: friendId, group }).catch(() => {})
     return NextResponse.json({ ok: true })
   } catch (e) {
     return fail(e)

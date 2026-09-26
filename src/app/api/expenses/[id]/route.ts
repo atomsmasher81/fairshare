@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { fail, sessionUserId, unauthorized } from '@/lib/api'
 import { saveInput, type ExpenseInput } from '@/lib/entry'
+/* eslint-disable @typescript-eslint/no-require-imports */
+const { notifyExpenseSplitMembers } = require('@/lib/telegram-notifications')
 
 type Ctx = { params: Promise<{ id: string }> }
 
@@ -32,6 +34,9 @@ export async function PATCH(request: NextRequest, { params }: Ctx) {
   try {
     const input = (await request.json()) as ExpenseInput
     const expense = await saveInput(userId, input, 'web', (await params).id)
+    if (!expense.group.isPersonal) {
+      notifyExpenseSplitMembers({ prisma, expense, group: expense.group, excludeUserIds: [userId], action: 'edited' }).catch(() => {})
+    }
     return NextResponse.json({ ok: true, id: expense.id })
   } catch (e) {
     return fail(e)
@@ -48,5 +53,8 @@ export async function DELETE(_req: NextRequest, { params }: Ctx) {
   await prisma.activity.create({
     data: { groupId: existing.groupId, userId, type: 'expense_deleted', metadata: JSON.stringify({ expenseId: existing.id, description: existing.description, amount: existing.amount }) },
   })
+  if (!existing.group.isPersonal) {
+    notifyExpenseSplitMembers({ prisma, expense: existing, group: existing.group, excludeUserIds: [userId], action: 'deleted' }).catch(() => {})
+  }
   return NextResponse.json({ ok: true })
 }

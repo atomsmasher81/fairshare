@@ -3,6 +3,7 @@ import { prisma } from '@/lib/prisma'
 import { fail, sessionUserId, unauthorized } from '@/lib/api'
 /* eslint-disable @typescript-eslint/no-require-imports */
 const ledger = require('@/lib/ledger')
+const { notifyPayment } = require('@/lib/telegram-notifications')
 
 /**
  * POST { friendId, direction: 'i_paid' | 'they_paid', amount (paise), date?, paymentMethodId?, groupId? }
@@ -28,6 +29,7 @@ export async function POST(request: NextRequest) {
     } else {
       await ledger.recordSettlement(prisma, { userId, fromId, toId, amount: amt, date: when, paymentMethodId })
     }
+    notifyPayment({ prisma, actorId: userId, fromUserId: fromId, toUserId: toId, amount: amt }).catch(() => {})
     return NextResponse.json({ ok: true })
   } catch (e) {
     return fail(e)
