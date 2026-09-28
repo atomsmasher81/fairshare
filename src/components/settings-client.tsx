@@ -73,7 +73,7 @@ const KINDS = [
   { value: 'bank', label: 'Bank' },
 ]
 
-export function MethodsSection({ methods }: { methods: { id: string; name: string; kind: string; archived: boolean }[] }) {
+export function MethodsSection({ methods, defaultId }: { methods: { id: string; name: string; kind: string; archived: boolean }[]; defaultId: string | null }) {
   const router = useRouter()
   const [name, setName] = useState('')
   const [kind, setKind] = useState('upi')
@@ -98,7 +98,7 @@ export function MethodsSection({ methods }: { methods: { id: string; name: strin
   }
 
   return (
-    <Block id="methods" title="Payment methods" hint="What you pick under “Paid with”. First one shows first.">
+    <Block id="methods" title="Payment methods" hint="★ is assumed when you don’t say how you paid (Siri, Say-it). Order is the order of the chips.">
       <div className="card divide-y divide-line/[0.07] overflow-hidden">
         {active.map((m, i) => (
           <div key={m.id} className="flex items-center gap-2 px-4 py-2.5">
@@ -109,7 +109,14 @@ export function MethodsSection({ methods }: { methods: { id: string; name: strin
               </form>
             ) : (
               <>
-                <button className="flex-1 text-left text-[15px]" onClick={() => { setEditing(m.id); setEditName(m.name) }}>{m.name}</button>
+                <button onClick={async () => { if (await patchMe({ defaultMethodId: defaultId === m.id ? null : m.id })) router.refresh() }}
+                  className={cn('flex h-8 w-8 items-center justify-center rounded-full text-[17px] leading-none hover:bg-sunken', defaultId === m.id ? 'text-semi' : 'text-faint')}
+                  aria-label={defaultId === m.id ? `${m.name} is the default` : `Make ${m.name} the default`} title="Default when not said">
+                  {defaultId === m.id ? '★' : '☆'}
+                </button>
+                <button className="flex-1 text-left text-[15px]" onClick={() => { setEditing(m.id); setEditName(m.name) }}>
+                  {m.name}{defaultId === m.id && <span className="ml-2 text-[12px] text-muted">default</span>}
+                </button>
                 <span className="text-[12px] uppercase tracking-wide text-faint">{m.kind}</span>
                 <button disabled={i === 0} onClick={() => patch(m.id, { move: -1 })} className="flex h-8 w-8 items-center justify-center rounded-full text-muted hover:bg-sunken disabled:opacity-25" aria-label="Move up"><ArrowUp size={15} /></button>
                 <button disabled={i === active.length - 1} onClick={() => patch(m.id, { move: 1 })} className="flex h-8 w-8 items-center justify-center rounded-full text-muted hover:bg-sunken disabled:opacity-25" aria-label="Move down"><ArrowDown size={15} /></button>
@@ -480,6 +487,33 @@ export function McpSection({ url }: { url: string }) {
           </div>
         </div>
         <p className="text-[12.5px] text-muted">Clients that can’t send headers can append <code className="font-mono">?token=&lt;your key&gt;</code> to the URL. Treat that URL like a password.</p>
+      </div>
+    </Block>
+  )
+}
+
+/* ---------- AI rules + prompt ---------- */
+
+export function AiSection({ instructions, prompt, enabled }: { instructions: string; prompt: string; enabled: boolean }) {
+  const router = useRouter()
+  const [text, setText] = useState(instructions)
+  const [show, setShow] = useState(false)
+  return (
+    <Block id="ai" title="How the AI reads what you say" hint={enabled ? 'Add your own rules — they’re sent with every Siri / Say-it entry.' : 'No AI key on this server — sentences use the built-in rule parser.'}>
+      <div className="card space-y-3 p-4">
+        <textarea
+          value={text}
+          onChange={(e) => setText(e.target.value)}
+          rows={4}
+          maxLength={2000}
+          placeholder={'e.g.\n- "Swiggy" or "Zomato" is always Semi-essential\n- Anything with "Ayush" is split with Ayush\n- "HSBC" means Credit card'}
+          className="w-full rounded-2xl border border-line/10 bg-bg p-3 text-[14px] outline-none focus:border-line/25"
+        />
+        {text !== instructions && (
+          <PrimaryButton className="h-10 w-full text-[14px]" onClick={async () => { if (await patchMe({ aiInstructions: text })) router.refresh() }}>Save rules</PrimaryButton>
+        )}
+        <button onClick={() => setShow((x) => !x)} className="text-[13px] text-muted hover:text-fg">{show ? 'Hide' : 'See'} exactly what the AI is told</button>
+        {show && <pre className="max-h-80 overflow-auto whitespace-pre-wrap rounded-xl bg-sunken p-3 font-mono text-[11.5px] leading-relaxed text-muted">{prompt}</pre>}
       </div>
     </Block>
   )

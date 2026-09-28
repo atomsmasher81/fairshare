@@ -141,7 +141,7 @@ const EXPENSE_INCLUDE = {
 async function createExpense(prisma, {
   userId, group, description, amount, category, date, source = 'web', payee = null,
   externalRef = null, needsReview = false, rawText = null, paidById, splits, splitType,
-  needLevel = null, paymentMethodId = null, notes = null,
+  needLevel = null, paymentMethodId = null, notes = null, inputText = null, inputVia = null, parsedBy = null,
 }) {
   if (!Number.isInteger(amount) || amount <= 0) throw new LedgerError('Amount must be greater than 0', 400, 'INVALID_AMOUNT');
   if (amount > 1e11) throw new LedgerError('That amount looks too large', 400, 'INVALID_AMOUNT');
@@ -168,6 +168,9 @@ async function createExpense(prisma, {
         paymentMethodId: methodId,
         notes: notes ? String(notes).slice(0, 500) : null,
         splitType: splitType || (splits && splits.length ? 'exact' : 'equal'),
+        inputText: inputText ? String(inputText) : null,
+        inputVia,
+        parsedBy,
         splits: { create: finalSplits },
       },
       include: EXPENSE_INCLUDE,
@@ -191,14 +194,14 @@ async function ownedMethodId(prisma, userId, id) {
 function describeExpense(expense) {
   if (expense.group.isPersonal) {
     const bits = [NEED_LABELS[expense.needLevel], expense.paymentMethod?.name].filter(Boolean);
-    return `✅ ${expense.description} ${formatINR(expense.amount)}${bits.length ? ' · ' + bits.join(' · ') : ''}`;
+    return `✅ ${expense.description} ${formatINR(expense.amount)} · Personal${bits.length ? ' · ' + bits.join(' · ') : ''}`;
   }
   const mine = expense.splits.find((s) => s.userId === expense.createdById);
   const others = Array.from(new Set([
     ...expense.splits.filter((s) => s.userId !== expense.createdById).map((s) => s.user?.displayName),
     expense.paidById !== expense.createdById ? expense.paidBy?.displayName : null,
   ].filter(Boolean)));
-  const where = expense.group.isDirect ? `with ${others.join(', ')}` : expense.group.name;
+  const where = expense.group.isDirect ? `with ${others.join(', ')}` : `${expense.group.name} (group)`;
   const paidByOther = expense.paidById !== expense.createdById ? ` · ${expense.paidBy?.displayName} paid` : '';
   return `✅ ${expense.description} — ${formatINR(expense.amount)} · ${where}${paidByOther} · your share ${formatINR(mine ? mine.amount : 0)}`;
 }
@@ -211,7 +214,7 @@ async function addFromText(prisma, { userId, text, source = 'web', groupId, grou
   const expense = await createExpense(prisma, {
     userId, group, description: parsed.description.charAt(0).toUpperCase() + parsed.description.slice(1), amount: parsed.amount,
     category: category && category !== 'other' ? category : parsed.category,
-    date, source, rawText: parsed.rawText,
+    date, source, rawText: parsed.rawText, inputText: parsed.rawText, inputVia: source === 'shortcut' ? 'siri' : source, parsedBy: 'quick',
   });
   return { expense, message: describeExpense(expense) };
 }
@@ -250,7 +253,7 @@ async function addFromBankMessage(prisma, { userId, message, source = 'sms', dat
     paymentMethodId: recall?.paymentMethodId || null,
     category: rule?.category || guessCategory(parsed.payee || ''),
     date: date || new Date(), source, payee: parsed.payee, externalRef: parsed.ref,
-    needsReview: !rule, rawText: message,
+    needsReview: !rule, rawText: message, inputText: message, inputVia: 'sms', parsedBy: 'sms parser',
   });
   return { expense, known: !!rule, message: describeExpense(expense) };
 }

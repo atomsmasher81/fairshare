@@ -11,7 +11,7 @@
  */
 import type { ParseContext, ParsedEntry } from '@/lib/ai'
 
-const FILLER = new Set(['for', 'on', 'via', 'using', 'by', 'with', 'paid', 'pay', 'spent', 'spend', 'rs', 'rs.', 'rupees', 'inr', 'the', 'a', 'an', 'split', 'equally', 'evenly', 'me', 'i', 'and', 'my', 'of', 'at', 'to', 'in', 'today', 'yesterday', 'kal', 'essential', 'semi', 'luxury', 'owes', 'owe', 'back', 'bucks', 'add', 'added', 'expense', 'expenses', 'personal', 'personally', 'myself', 'rupee', 'into', 'log'])
+const FILLER = new Set(['for', 'on', 'via', 'using', 'by', 'with', 'paid', 'pay', 'spent', 'spend', 'rs', 'rs.', 'rupees', 'inr', 'the', 'a', 'an', 'split', 'equally', 'evenly', 'me', 'i', 'and', 'my', 'of', 'at', 'to', 'in', 'today', 'yesterday', 'kal', 'essential', 'semi', 'luxury', 'owes', 'owe', 'back', 'bucks', 'add', 'added', 'expense', 'expenses', 'personal', 'personally', 'myself', 'rupee', 'into', 'log', 'between', 'had', 'have', 'record', 'note', 'spend', 'got', 'bought'])
 
 function amountOf(t: string): { value: number; raw: string } | null {
   const re = /(?:₹|rs\.?\s?|inr\s?)?(\d[\d,]*(?:\.\d+)?)\s*(k|thousand|hundred|lakh)?\b/gi
@@ -101,7 +101,8 @@ export function parseRules(text: string, ctx: ParseContext & { methodKinds: Reco
   if (iOwe) return { ...base, intent: 'expense', description: pretty || 'Expense', paid_by: iOwe, people: [iOwe], split: 'full', method: null }
 
   // someone else paid
-  const theyPaid = first(/\b(\w+) paid\b/)
+  // "Ayush paid" means Ayush paid — but "… Ayush paid by me" / "paid by me" means I paid
+  const theyPaid = /\bpaid by me\b/.test(raw) ? null : first(/\b(\w+) paid\b/)
   if (theyPaid) {
     const people = Array.from(new Set([theyPaid, ...mentioned]))
     return { ...base, intent: 'expense', description: pretty || 'Expense', paid_by: theyPaid, people, split: 'equal', method: null }

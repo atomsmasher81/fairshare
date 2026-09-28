@@ -6,7 +6,7 @@ export async function PATCH(request: NextRequest) {
   const session = await getSession()
   if (!session.isLoggedIn || !session.userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   const body = await request.json().catch(() => ({}))
-  const data: { upiId?: string | null; defaultGroupId?: string | null; displayName?: string } = {}
+  const data: { upiId?: string | null; defaultGroupId?: string | null; displayName?: string; defaultMethodId?: string | null; aiInstructions?: string | null } = {}
 
   if ('upiId' in body) {
     const v = String(body.upiId || '').trim()
@@ -22,6 +22,12 @@ export async function PATCH(request: NextRequest) {
     data.defaultGroupId = id
   }
   if (typeof body.displayName === 'string' && body.displayName.trim()) data.displayName = body.displayName.trim().slice(0, 40)
+  if ('defaultMethodId' in body) {
+    const id = body.defaultMethodId || null
+    if (id && !(await prisma.paymentMethod.findFirst({ where: { id, userId: session.userId } }))) return NextResponse.json({ error: 'Payment method not found' }, { status: 404 })
+    data.defaultMethodId = id
+  }
+  if ('aiInstructions' in body) data.aiInstructions = String(body.aiInstructions || '').trim().slice(0, 2000) || null
 
   await prisma.user.update({ where: { id: session.userId }, data })
   return NextResponse.json({ ok: true })

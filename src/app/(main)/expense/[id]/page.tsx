@@ -76,6 +76,7 @@ export default async function EditExpensePage({ params, searchParams }: { params
       options={options}
       backHref={back}
       history={history}
+      capture={{ text: expense.inputText, via: expense.inputVia, parsedBy: expense.parsedBy }}
       initial={{
         id: expense.id,
         description: expense.description,

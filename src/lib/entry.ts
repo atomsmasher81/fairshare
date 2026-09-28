@@ -35,6 +35,10 @@ export interface Draft {
   via: 'quick' | 'ai'
   needsReview: boolean
   targetSaid?: 'personal' | 'shared' | null
+  // trace: what was said and what turned it into this draft
+  inputText?: string
+  parsedBy?: string // gemini/<model> | rules | rules (AI unavailable) | quick
+  aiCallId?: string | null
 }
 
 export interface EntryContext {
@@ -43,16 +47,34 @@ export interface EntryContext {
   methods: { id: string; name: string }[]
   friends: { id: string; displayName: string }[]
   groups: { id: string; name: string; members: { user: { id: string; displayName: string } }[] }[]
+  defaultMethodId: string | null
+  aiInstructions: string | null
+  frequentItems: string[]
 }
 
 export async function loadContext(userId: string): Promise<EntryContext> {
-  const [me, methods, friends, groups] = await Promise.all([
-    prisma.user.findUnique({ where: { id: userId }, select: { displayName: true } }),
+  const [me, methods, friends, groups, recent] = await Promise.all([
+    prisma.user.findUnique({ where: { id: userId }, select: { displayName: true, defaultMethodId: true, aiInstructions: true } }),
     ledger.listPaymentMethods(prisma, userId),
     ledger.listFriends(prisma, userId),
     ledger.listSharedGroups(prisma, userId),
+    prisma.expense.findMany({
+      where: { createdById: userId, deletedAt: null, needsReview: false },
+      orderBy: { createdAt: 'desc' }, take: 300, select: { description: true },
+    }),
   ])
-  return { userId, meName: me?.displayName || 'You', methods, friends, groups }
+  // Most-used descriptions: lets the AI fix dictation slips like "photo" → "Auto"
+  const counts = new Map<string, { name: string; n: number }>()
+  for (const r of recent) {
+    const k = r.description.trim().toLowerCase()
+    if (!k || ['expense', 'shared expense', 'personal expense', 'payment'].includes(k)) continue
+    const c = counts.get(k)
+    if (c) c.n++
+    else counts.set(k, { name: r.description.trim(), n: 1 })
+  }
+  const frequentItems = Array.from(counts.values()).sort((a, b) => b.n - a.n).slice(0, 30).map((c) => c.name)
+  const defaultMethodId = me?.defaultMethodId && methods.some((m: { id: string }) => m.id === me.defaultMethodId) ? me.defaultMethodId : null
+  return { userId, meName: me?.displayName || 'You', methods, friends, groups, defaultMethodId, aiInstructions: me?.aiInstructions || null, frequentItems }
 }
 
 const IST = 5.5 * 3600e3
@@ -92,6 +114,22 @@ function titleCase(s: string) {
   return s.replace(/\s+/g, ' ').trim().replace(/(^|\s)(\p{Ll})/gu, (_m, sp, c) => sp + c.toUpperCase())
 }
 
+const NUMBER_WORDS: Record<string, number> = {
+  one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9, ten: 10,
+  eleven: 11, twelve: 12, thirteen: 13, fourteen: 14, fifteen: 15, sixteen: 16, seventeen: 17, eighteen: 18, nineteen: 19,
+}
+
+/**
+ * Siri dictation turns "one forty-five" into "one ₹45" and "two fifty" into "two ₹50".
+ * Rejoin them before anything parses the text: "one ₹45" → "₹145", "12 ₹99" → "₹1299".
+ */
+export function rejoinSpokenNumbers(text: string) {
+  return text.replace(/\b(one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|[1-9]\d?)\s*₹\s*(\d{2})(?![\d,.])/gi, (_m, head: string, tail: string) => {
+    const n = NUMBER_WORDS[head.toLowerCase()] ?? Number(head)
+    return `₹${n * 100 + Number(tail)}`
+  })
+}
+
 const PERSONAL = /(\b(personal|personally|myself|just me|only me|for me|my own|khud|apna)\b|(^|\s)#me\b)/i
 
 /**
@@ -113,30 +151,49 @@ export async function draftFromText(text: string, ctx: EntryContext): Promise<{ 
 }
 
 async function draftFromTextInner(text: string, ctx: EntryContext): Promise<{ draft: Draft | null; error?: string; model?: string }> {
-  const raw = String(text || '').trim()
-  if (!raw) return { draft: null, error: 'Say something like “milk 20”' }
+  const original = String(text || '').trim()
+  if (!original) return { draft: null, error: 'Say something like “milk 20”' }
+  const raw = rejoinSpokenNumbers(original)
+  const trace = (d: Draft | null, parsedBy: string, aiCallId: string | null = null) => {
+    if (d) { d.inputText = original; d.parsedBy = parsedBy; d.aiCallId = aiCallId }
+    return d
+  }
 
-  if (looksSimple(raw, ctx)) return { draft: await quickDraft(raw, ctx) }
+  if (looksSimple(raw, ctx)) return { draft: trace(await quickDraft(raw, ctx), 'quick') }
 
   const pctx = {
     today: todayIST(),
     methods: ctx.methods.map((m) => m.name),
     friends: ctx.friends.map((f) => f.displayName),
     groups: ctx.groups.map((g) => g.name),
+    defaultMethod: ctx.methods.find((m) => m.id === ctx.defaultMethodId)?.name || null,
+    frequentItems: ctx.frequentItems,
+    instructions: ctx.aiInstructions,
   }
   const methodKinds = Object.fromEntries(ctx.methods.map((m) => [m.name, (m as { kind?: string }).kind || 'other']))
 
   let parsed: ParsedEntry | null = null
   let model = 'rules'
+  let parsedBy = 'rules'
+  let aiCallId: string | null = null
   if (aiEnabled()) {
     const started = Date.now()
     try {
       const r = await parseWithAI(raw, pctx)
       parsed = r.entry
       model = r.model
-      await prisma.aiCall.create({ data: { userId: ctx.userId, input: raw.slice(0, 500), output: JSON.stringify(parsed), model, ms: Date.now() - started, ok: true } })
+      parsedBy = r.model
+      const call = await prisma.aiCall.create({
+        data: { userId: ctx.userId, input: original, output: JSON.stringify({ result: parsed, sentText: raw !== original ? raw : undefined, attempts: r.attempts }), model, ms: Date.now() - started, ok: true },
+      })
+      aiCallId = call.id
     } catch (e) {
-      await prisma.aiCall.create({ data: { userId: ctx.userId, input: raw.slice(0, 500), output: String(e instanceof Error ? e.message : e).slice(0, 500), model: 'none', ms: Date.now() - started, ok: false } }).catch(() => {})
+      const attempts = (e as { attempts?: unknown }).attempts
+      const call = await prisma.aiCall.create({
+        data: { userId: ctx.userId, input: original, output: JSON.stringify({ error: e instanceof Error ? e.message : String(e), attempts }), model: 'none', ms: Date.now() - started, ok: false },
+      }).catch(() => null)
+      aiCallId = call?.id || null
+      parsedBy = 'rules (AI unavailable)'
     }
   }
   // No AI (or it failed): the rule parser knows the common sentence shapes.
@@ -147,7 +204,7 @@ async function draftFromTextInner(text: string, ctx: EntryContext): Promise<{ dr
     if (!d) return { draft: null, error: 'Couldn’t understand that. Try “milk 20” or “dinner 1200 with Rahul”.' }
     d.notes.push('Couldn’t work out who this was with — saved as personal')
     d.needsReview = true
-    return { draft: d }
+    return { draft: trace(d, parsedBy, aiCallId) }
   }
 
   if (parsed.intent === 'none' || !parsed.amount) {
@@ -174,6 +231,7 @@ async function draftFromTextInner(text: string, ctx: EntryContext): Promise<{ dr
         splitMode: 'equal', splits: null,
         people: [{ id: other.id, name: other.displayName }],
         notes: [], via: model === 'rules' ? 'quick' : 'ai', needsReview: false,
+        inputText: original, parsedBy, aiCallId,
       },
     }
   }
@@ -184,7 +242,7 @@ async function draftFromTextInner(text: string, ctx: EntryContext): Promise<{ dr
 
   return {
     model,
-    draft: await finish(ctx, {
+    draft: trace(await finish(ctx, {
       description: titleCase(parsed.description || 'Expense'),
       amount,
       needLevel: parsed.need,
@@ -198,7 +256,7 @@ async function draftFromTextInner(text: string, ctx: EntryContext): Promise<{ dr
       split: parsed.split,
       shares: parsed.shares,
       via: model === 'rules' ? 'quick' : 'ai',
-    }),
+    }), parsedBy, aiCallId),
   }
 }
 
@@ -238,20 +296,18 @@ async function finish(ctx: EntryContext, p: DraftInput): Promise<Draft> {
   const iPaid = paidById === ctx.userId
   let paymentMethodId = p.paymentMethodId || null
   if (iPaid && !paymentMethodId) {
-    paymentMethodId = recall?.paymentMethodId || (await ledger.lastUsedMethodId(prisma, ctx.userId)) || ctx.methods[0]?.id || null
+    // Nothing said: your chosen default (Settings → Payment methods ★), else the first method
+    paymentMethodId = ctx.defaultMethodId || ctx.methods[0]?.id || null
   }
   if (!iPaid) paymentMethodId = null
 
   const friendIds = p.friendIds || []
   const nameOf = (id: string) => (id === ctx.userId ? ctx.meName : ctx.friends.find((f) => f.id === id)?.displayName || 'Someone')
 
-  let groupId = p.groupId || null
-  let groupName = p.groupName || null
-  // Plain "milk 20": reuse the ledger you used last time for this item (e.g. the flat group).
-  if (!groupId && !friendIds.length && p.via === 'quick' && recall?.groupId) {
-    const g = ctx.groups.find((x) => x.id === recall.groupId)
-    if (g) { groupId = g.id; groupName = g.name }
-  }
+  const groupId = p.groupId || null
+  const groupName = p.groupName || null
+  // Nothing said about people or a group → personal. (We used to reuse the ledger from the last
+  // time you logged the same item; that silently sent entries to the wrong place.)
 
   let participants: string[] = []
   if (groupId) participants = ctx.groups.find((g) => g.id === groupId)?.members.map((m) => m.user.id) || []
@@ -305,6 +361,8 @@ async function finish(ctx: EntryContext, p: DraftInput): Promise<Draft> {
 }
 
 /** Persist a (possibly user-edited) draft. Returns a one-line summary for notifications. */
+const VIA: Record<string, string> = { shortcut: 'siri', sms: 'sms', ai: 'say-it', web: 'say-it', mcp: 'mcp', telegram: 'telegram' }
+
 export async function saveDraft(userId: string, d: Draft, source: string) {
   const friendIds = new Set((await ledger.listFriends(prisma, userId)).map((f: { id: string }) => f.id))
   const others = [...(d.friendIds || []), d.paidById, d.toUserId].filter((id): id is string => !!id && id !== userId)
@@ -345,7 +403,11 @@ export async function saveDraft(userId: string, d: Draft, source: string) {
     needLevel: d.needLevel,
     paymentMethodId: d.paymentMethodId,
     needsReview: !!d.needsReview,
+    inputText: d.inputText || null,
+    inputVia: VIA[source] || source,
+    parsedBy: d.parsedBy || null,
   })
+  if (d.aiCallId) await prisma.aiCall.update({ where: { id: d.aiCallId }, data: { expenseId: expense.id } }).catch(() => {})
   return { message: ledger.describeExpense(expense) + (d.needsReview ? ' — check it in the app' : ''), expense }
 }
 

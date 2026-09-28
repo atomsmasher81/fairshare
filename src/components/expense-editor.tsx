@@ -58,12 +58,15 @@ const isOp = (c: string) => '+−×÷'.includes(c)
 
 /* ---------- component ---------- */
 
-export function ExpenseEditor({ options, initial, backHref = '/home', fromDraft, history }: {
+const VIA_LABEL: Record<string, string> = { siri: 'Siri heard', 'say-it': 'You typed', sms: 'Bank SMS', telegram: 'Telegram', mcp: 'From Claude' }
+
+export function ExpenseEditor({ options, initial, backHref = '/home', fromDraft, history, capture }: {
   options: EditorOptions
   initial: EditorInitial
   backHref?: string
   fromDraft?: boolean
   history?: TimelineItem[]
+  capture?: { text: string | null; via: string | null; parsedBy: string | null }
 }) {
   const router = useRouter()
   const me = options.me.id
@@ -161,26 +164,62 @@ export function ExpenseEditor({ options, initial, backHref = '/home', fromDraft,
   }, [shared, amount, splitMode, payer, me, members.length, exact, sharers])
 
   /* ----- keypad ----- */
+  // The amount is a real input (keyboard suppressed with inputMode="none") so it has a cursor:
+  // tap between digits to fix one, and the keypad types at the cursor.
+  const amountRef = useRef<HTMLInputElement>(null)
+  const caret = useRef<number | null>(null)
+  const lastSel = useRef<[number, number] | null>(null) // where the cursor was, even after a tap elsewhere
+  const validExpr = (e: string) =>
+    e === '' || (/^(\d{1,9}(\.\d{0,2})?)([+−×÷](\d{1,9}(\.\d{0,2})?)?)*$/.test(e) && !/[+−×÷]{2}/.test(e))
+
   const press = useCallback((k: string) => {
     if (navigator.vibrate) navigator.vibrate(5)
     setExpr((e) => {
-      if (k === 'back') return e.slice(0, -1)
-      if (k === 'clear') return ''
-      if (isOp(k)) {
-        if (!e) return e
-        return isOp(e.slice(-1)) ? e.slice(0, -1) + k : e + k
+      const el = amountRef.current
+      const focused = el && document.activeElement === el
+      const sel: [number, number] | null = focused && el.selectionStart !== null ? [el.selectionStart, el.selectionEnd ?? el.selectionStart] : lastSel.current
+      const at = sel ? Math.min(sel[0], e.length) : e.length
+      const end = sel ? Math.min(sel[1], e.length) : at
+      let before = e.slice(0, at)
+      let after = e.slice(end)
+      let next: string
+      if (k === 'clear') { caret.current = 0; return '' }
+      if (k === 'back') {
+        if (end > at) next = before + after
+        else { before = before.slice(0, -1); next = before + after }
+      } else if (isOp(k)) {
+        if (!before) return e
+        if (isOp(before.slice(-1))) before = before.slice(0, -1)
+        if (isOp(after.slice(0, 1))) after = after.slice(1)
+        before += k
+        next = before + after
+      } else if (k === '.') {
+        const seg = (before.split(/[+−×÷]/).pop() || '') + (after.split(/[+−×÷]/)[0] || '')
+        if (seg.includes('.')) return e
+        before += (before && !isOp(before.slice(-1)) ? '.' : '0.')
+        next = before + after
+      } else {
+        // a lone leading zero is replaced ("0" + "5" → "5")
+        const segBefore = before.split(/[+−×÷]/).pop() || ''
+        if (segBefore === '0' && !(after.split(/[+−×÷]/)[0] || '')) before = before.slice(0, -1)
+        before += k
+        next = before + after
       }
-      const lastNum = e.split(/[+−×÷]/).pop() || ''
-      if (k === '.') {
-        if (lastNum.includes('.')) return e
-        return e + (lastNum ? '.' : '0.')
-      }
-      if (/\.\d{2}$/.test(lastNum)) return e // max 2 decimals
-      if (lastNum === '0') return e.slice(0, -1) + k
-      if (lastNum.replace('.', '').length >= 9) return e
-      return e + k
+      if (!validExpr(next)) return e
+      caret.current = before.length
+      return next
     })
   }, [])
+
+  // Put the cursor back where the keypad left it
+  useEffect(() => {
+    const el = amountRef.current
+    if (el && caret.current !== null) {
+      lastSel.current = [caret.current, caret.current]
+      if (document.activeElement === el) el.setSelectionRange(caret.current, caret.current)
+      caret.current = null
+    }
+  }, [expr])
 
   const settle = () => {
     const v = evaluate(expr)
@@ -192,7 +231,7 @@ export function ExpenseEditor({ options, initial, backHref = '/home', fromDraft,
     const onKey = (ev: KeyboardEvent) => {
       if (descFocused || splitSheet || friendSheet) return
       const t = ev.target as HTMLElement
-      if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA')) return
+      if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA') && t !== amountRef.current) return
       const map: Record<string, string> = { '+': '+', '-': '−', '*': '×', x: '×', '/': '÷', '.': '.', Backspace: 'back', Escape: 'clear' }
       if (/^\d$/.test(ev.key)) press(ev.key)
       else if (map[ev.key]) press(map[ev.key])
@@ -301,10 +340,7 @@ export function ExpenseEditor({ options, initial, backHref = '/home', fromDraft,
 
   const selectedFriendIds = target.type === 'friends' ? target.ids : []
   const selectedGroupId = target.type === 'group' ? target.id : null
-  const displayAmount = !expr ? '₹0' : hasOps ? expr : (() => {
-    const [i, d] = expr.split('.')
-    return `₹${Number(i || 0).toLocaleString('en-IN')}${d !== undefined ? '.' + d : ''}`
-  })()
+
 
   return (
     <div className="fixed inset-0 z-30 flex flex-col bg-bg md:static md:z-auto md:mx-auto md:max-w-md md:pt-4">
@@ -347,16 +383,47 @@ export function ExpenseEditor({ options, initial, backHref = '/home', fromDraft,
 
       {/* scrollable middle */}
       <div className="no-scrollbar flex-1 overflow-y-auto px-4 md:px-0">
-        {/* amount */}
-        <button type="button" onClick={() => descRef.current?.blur()} className="block w-full pb-2 pt-1 text-center">
-          <span className={cn('num block font-semibold tracking-[-0.045em] transition-all', amount ? 'text-fg' : 'text-faint',
-            displayAmount.length > 12 ? 'text-[38px]' : 'text-[50px]')}>
-            {displayAmount}
-          </span>
+        {/* amount — tap to place the cursor; the keypad below types at it */}
+        <div className="relative flex w-full flex-col items-center pb-2 pt-1">
+          <div className="flex w-full items-center justify-center">
+            <span className={cn('num font-semibold tracking-[-0.045em]', amount ? 'text-fg' : 'text-faint', expr.length > 11 ? 'text-[34px]' : 'text-[50px]')}>₹</span>
+            <input
+              ref={amountRef}
+              value={expr}
+              inputMode="none"
+              autoFocus={!editing}
+              placeholder="0"
+              aria-label="Amount"
+              onFocus={() => descRef.current?.blur()}
+              onSelect={(ev) => { const t = ev.currentTarget; if (t.selectionStart !== null) lastSel.current = [t.selectionStart, t.selectionEnd ?? t.selectionStart] }}
+              onChange={(ev) => {
+                const v = ev.target.value.replace(/\*/g, '×').replace(/\//g, '÷').replace(/-/g, '−').replace(/[^\d.+−×÷]/g, '')
+                if (validExpr(v)) setExpr(v)
+              }}
+              onKeyDown={(ev) => {
+                if (ev.key === 'Enter' || ev.key === '=') { ev.preventDefault(); if (hasOps) settle(); else void save(false) }
+              }}
+              className={cn('num min-w-0 bg-transparent text-center font-semibold tracking-[-0.045em] caret-[rgb(var(--essential))] outline-none placeholder:text-faint',
+                amount ? 'text-fg' : 'text-faint', expr.length > 11 ? 'text-[34px]' : 'text-[50px]')}
+              style={{ width: `${Math.max(1, expr.length || 1) * (expr.length > 11 ? 0.62 : 0.6)}em`, maxWidth: '82%' }}
+            />
+            {expr && (
+              <button type="button" onClick={() => { setExpr(''); amountRef.current?.focus() }} aria-label="Clear amount"
+                className="ml-1 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-sunken text-muted">
+                <X size={15} />
+              </button>
+            )}
+          </div>
           <span className="mt-0.5 block h-5 text-[14px] text-muted">
-            {hasOps && amount > 0 ? `= ${inr(amount)}` : shared && amount > 0 ? `Your share ${inr(myShare)}` : ''}
+            {hasOps && amount > 0 ? `= ${inr(amount)}` : shared && amount > 0 ? `${amount >= 100000 ? inr(amount) + ' · ' : ''}Your share ${inr(myShare)}` : amount >= 100000 ? inr(amount) : ''}
           </span>
-        </button>
+          {capture?.text && (
+            <p className="mt-1 max-w-full truncate rounded-full bg-sunken px-3 py-1 text-[12.5px] text-muted" title={capture.text}>
+              {VIA_LABEL[capture.via || ''] || 'Heard'}: “{capture.text}”
+              {capture.parsedBy && <span className="text-faint"> · {capture.parsedBy.startsWith('gemini') || capture.parsedBy.startsWith('groq') || capture.parsedBy.startsWith('openai') ? 'AI' : capture.parsedBy}</span>}
+            </p>
+          )}
+        </div>
 
         {/* description */}
         <input
@@ -463,6 +530,7 @@ export function ExpenseEditor({ options, initial, backHref = '/home', fromDraft,
             <button
               key={k}
               type="button"
+              onPointerDown={(e) => e.preventDefault()}
               onClick={() => press(k)}
               onContextMenu={(e) => { if (k === 'back') { e.preventDefault(); press('clear') } }}
               className={cn('flex h-[48px] select-none items-center justify-center rounded-2xl text-[22px] transition-colors active:bg-fg/10',

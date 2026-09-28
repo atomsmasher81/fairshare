@@ -28,6 +28,10 @@ model User {
   claimCode        String?   @unique
   addedById        String?
 
+  // Capture defaults
+  defaultMethodId  String?   // payment method assumed when none is said (e.g. PhonePe)
+  aiInstructions   String?   // extra rules appended to the AI prompt, written by the user
+
   // Relations
   groupMemberships GroupMember[]
   expensesPaid     Expense[]       @relation("PaidBy")
@@ -100,6 +104,7 @@ model AiCall {
   model     String
   ms        Int
   ok        Boolean
+  expenseId String?  // the expense this parse became, if any
   createdAt DateTime @default(now())
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -162,6 +167,11 @@ model Expense {
   deletedAt   DateTime? // Soft delete
   deletedById String?
   editedAt    DateTime? // last real edit (not review/filing moves)
+
+  // What was actually said/typed, and how it became this expense — to debug misparses
+  inputText   String?   // full original text (Siri dictation, Say-it box, SMS, Telegram, MCP)
+  inputVia    String?   // siri | say-it | sms | telegram | mcp | app
+  parsedBy    String?   // e.g. gemini/gemini-3.1-flash-lite, rules, rules (AI unavailable), quick
 
   // Capture metadata
   source      String    @default("web") // web | telegram | shortcut | sms
