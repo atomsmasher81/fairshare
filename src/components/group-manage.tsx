@@ -41,7 +41,7 @@ export function GroupMembers({ groupId, inviteCode, members, friends, me, canMan
     const res = await fetch(`/api/groups/${groupId}`, { method: 'DELETE' })
     const j = await res.json().catch(() => ({}))
     if (!res.ok) { toast(j.error || 'Couldn’t leave', { tone: 'error' }); return }
-    router.push('/friends?tab=groups')
+    router.push('/friends')
     router.refresh()
   }
 

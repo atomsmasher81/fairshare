@@ -43,7 +43,7 @@ export default async function GroupPage({ params }: { params: Promise<{ id: stri
   return (
     <div className="space-y-5">
       <PageHeader
-        back="/friends?tab=groups"
+        back="/friends"
         title={group.name}
         subtitle={`${gl.members.length} ${gl.members.length === 1 ? 'member' : 'members'} · ${inr(gl.total)} spent in total`}
       />

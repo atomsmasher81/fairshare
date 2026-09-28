@@ -9,6 +9,7 @@ import { prisma } from '@/lib/prisma'
 import { draftFromText, loadContext, saveDraft, saveInput, todayIST, type ExpenseInput } from '@/lib/entry'
 import { balances, entriesFor, groupLedger, groupsWithBalance, monthRange, summarize, type Entry } from '@/lib/queries'
 import { inr, istDay, NEED_META, categoryMeta, type Need } from '@/lib/format'
+import { registerMoreTools } from '@/lib/mcp-more'
 /* eslint-disable @typescript-eslint/no-require-imports */
 const ledger = require('@/lib/ledger')
 const { notifyExpenseSplitMembers, notifyPayment } = require('@/lib/telegram-notifications')
@@ -53,7 +54,9 @@ export function createFairShareMcp(userId: string) {
         'FairShare tracks the user’s personal spending (with a need level: essential / semi-essential / luxury, and a payment method) ' +
         'and shared expenses with friends and groups. Amounts are Indian rupees. Call get_context first to learn the user’s friends, ' +
         'groups and payment methods. Prefer log_expense for anything the user says in plain words; use add_expense when you already ' +
-        'have structured fields. Confirm with the user before delete_expense or record_payment.',
+        'have structured fields. Use search_expenses / get_expense to find things and edit_expense to change any field; ' +
+        'deletes are soft (restore_expense / restore_payment). Confirm with the user before delete_expense, delete_payment, ' +
+        'record_payment, remove_group_member or leave_group.',
     },
   )
 
@@ -65,7 +68,8 @@ export function createFairShareMcp(userId: string) {
     const ctx = await loadContext(userId)
     return text([
       `You are logged in as ${ctx.meName}. Today is ${todayIST()} (India time).`,
-      `Payment methods: ${ctx.methods.map((m) => m.name).join(', ') || 'none'}`,
+      `Payment methods: ${ctx.methods.map((m) => m.name).join(', ') || 'none'} (default when not said: ${ctx.methods.find((m) => m.id === ctx.defaultMethodId)?.name || ctx.methods[0]?.name || 'none'})`,
+      `Items waiting in To-sort: ${await prisma.expense.count({ where: { createdById: userId, needsReview: true, deletedAt: null } })}`,
       `Friends: ${ctx.friends.map((f) => f.displayName).join(', ') || 'none'}`,
       `Groups: ${ctx.groups.map((g) => `${g.name} (${g.members.map((m) => m.user.displayName).join(', ')})`).join('; ') || 'none'}`,
       'Need levels: essential, semi (semi-essential), luxury.',
@@ -291,5 +295,6 @@ export function createFairShareMcp(userId: string) {
     return text(`Deleted “${e.description}” (${inr(e.amount)}).`)
   })
 
+  registerMoreTools(server, userId)
   return server
 }

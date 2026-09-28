@@ -188,7 +188,9 @@ const transient = (msg: string) => /\b(503|429|500|502|504)\b|abort|timeout|fetc
 export async function parseWithAI(text: string, ctx: ParseContext): Promise<{ entry: ParsedEntry; model: string; attempts: Attempt[] }> {
   const list = providers()
   if (!list.length) throw new Error('AI parsing is not configured')
-  const deadline = Date.now() + 12000 // Siri waits; people don't wait much longer
+  // Each model gets up to 10s (Gemini's free tier can be slow under load); the whole chain stops at 25s
+  // so a Siri shortcut still gets an answer — and the rule parser still saves the entry if everything fails.
+  const deadline = Date.now() + 25000
   const attempts: Attempt[] = []
   for (const p of list) {
     for (let tryNo = 0; tryNo < 2; tryNo++) {
@@ -196,7 +198,7 @@ export async function parseWithAI(text: string, ctx: ParseContext): Promise<{ en
       if (left < 800) break
       const started = Date.now()
       try {
-        const entry = await callProvider(p, ctx, text.slice(0, 4000), Math.min(4500, left))
+        const entry = await callProvider(p, ctx, text.slice(0, 4000), Math.min(10000, left))
         attempts.push({ model: `${p.name}/${p.model}`, ms: Date.now() - started })
         return { entry: sanitize(entry, ctx), model: `${p.name}/${p.model}`, attempts }
       } catch (e) {

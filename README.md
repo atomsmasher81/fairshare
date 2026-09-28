@@ -160,7 +160,12 @@ FairShare is a remote [MCP](https://modelcontextprotocol.io) server at `/api/mcp
 claude mcp add --transport http fairshare https://your-domain/api/mcp --header "Authorization: Bearer fs_…"
 ```
 
-Tools: `get_context`, `log_expense`, `add_expense`, `list_transactions`, `month_summary`, `balances`, `friend_history`, `groups`, `record_payment`, `delete_expense`. Every call runs as the key's owner, with the same validation and notifications as the app.
+27 tools cover everything the app does:
+- **Expenses:** `log_expense` (plain words), `add_expense`, `search_expenses`, `get_expense` (incl. what Siri heard and the edit history), `edit_expense`, `delete_expense`, `restore_expense`, `to_sort`, `file_to_sort`
+- **Money overview:** `get_context`, `list_transactions`, `month_summary`, `balances`, `friend_history`, `groups`, `timeline`
+- **Settling up:** `record_payment`, `delete_payment`, `restore_payment`
+- **People:** `add_friend`, `create_group`, `add_group_member`, `remove_group_member`, `leave_group`, `group_invite_link`
+- **Settings:** `manage_payment_method` (incl. the default method), `update_settings` (name, UPI ID, your own AI rules) Every call runs as the key's owner, with the same validation and notifications as the app.
 
 ## Tech stack
 

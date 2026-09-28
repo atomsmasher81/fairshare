@@ -373,6 +373,16 @@ export async function timeline(userId: string, opts: { before?: Date; take?: num
       group: { select: { name: true, isPersonal: true, isDirect: true, members: { select: { user: { select: { id: true, displayName: true } } } } } },
     },
   })
+  // An edit that moves an expense is logged in both ledgers (so each side's members see it); show it once
+  const seenEvents = new Map<string, number>()
+  for (let i = rows.length - 1; i >= 0; i--) {
+    const r = rows[i]
+    const key = `${r.type}|${r.userId}|${r.metadata}`
+    const t = r.createdAt.getTime()
+    const prev = seenEvents.get(key)
+    if (prev !== undefined && Math.abs(prev - t) < 3000) rows.splice(i, 1)
+    else seenEvents.set(key, t)
+  }
   const metas = rows.map((r) => parseMeta(r.metadata))
   const expenseIds = Array.from(new Set(metas.map((m) => m.expenseId).filter((x): x is string => !!x)))
   const settlementIds = Array.from(new Set(metas.map((m) => m.settlementId).filter((x): x is string => !!x)))
