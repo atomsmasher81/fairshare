@@ -25,6 +25,7 @@ FairShare does both jobs in one place:
 
 - **Splitting with friends** — who owes whom, per friend and per group, with the fewest payments to settle up.
 - **Your own spending** — every expense tagged **Essential / Semi-essential / Luxury** and by payment method (PhonePe, Google Pay, credit card, cash…), with a clear monthly summary.
+- **Net worth** — savings, mutual funds, stocks, FD, PPF, EPF, NPS, gold and loans in one place. Update the numbers once a month (or hand Claude a screenshot) and see what you've put in, what it's worth and your returns.
 
 Because it's one ledger, a ₹1,800 dinner split three ways counts **₹600 toward your spending** and **₹1,200 as money you're owed** — automatically.
 
@@ -70,6 +71,7 @@ It's a fast, installable **PWA** (iPhone, Android, desktop), it's **MIT-licensed
 - Need level (**Essential / Semi / Luxury**), payment methods you define, auto-categories
 - It remembers: "milk" gets the type and payment method you used last time
 - Monthly summary by need level, category and payment method, vs last month
+- **Net worth tracker** — accounts with money put in vs current value, a one-screen monthly update, loans subtract; log an SIP as an *Investment* and it goes into its account automatically (kept out of spending)
 
 **Capture without friction**
 - **Siri / iOS Shortcuts** — "Hey Siri, spent" → "dinner 1800 with Rahul and Amit on card"
@@ -161,11 +163,12 @@ FairShare is a remote [MCP](https://modelcontextprotocol.io) server at `/api/mcp
 claude mcp add --transport http fairshare https://your-domain/api/mcp --header "Authorization: Bearer fs_…"
 ```
 
-27 tools cover everything the app does:
+31 tools cover everything the app does:
 - **Expenses:** `log_expense` (plain words), `add_expense`, `search_expenses`, `get_expense` (incl. what Siri heard and the edit history), `edit_expense`, `delete_expense`, `restore_expense`, `to_sort`, `file_to_sort`
 - **Money overview:** `get_context`, `list_transactions`, `month_summary`, `balances`, `friend_history`, `groups`, `timeline`
 - **Settling up:** `record_payment`, `delete_payment`, `restore_payment`
 - **People:** `add_friend`, `create_group`, `add_group_member`, `remove_group_member`, `leave_group`, `group_invite_link`
+- **Net worth:** `net_worth`, `update_accounts` (batch — perfect for “here's a screenshot of my portfolio”), `account_history`, `manage_account`
 - **Settings:** `manage_payment_method` (incl. the default method), `update_settings` (name, UPI ID, your own AI rules) Every call runs as the key's owner, with the same validation and notifications as the app.
 
 ## Tech stack

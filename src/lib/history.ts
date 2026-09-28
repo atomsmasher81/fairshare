@@ -14,6 +14,7 @@ export interface Snapshot {
   category: string
   ledger: string
   splits: { name: string; amount: number }[]
+  account?: string | null
 }
 
 type ExpenseLike = {
@@ -24,6 +25,7 @@ type ExpenseLike = {
   needLevel: string | null
   paidBy?: { displayName: string } | null
   paymentMethod?: { name: string } | null
+  asset?: { name: string } | null
   group?: { name: string; isPersonal?: boolean; isDirect?: boolean } | null
   splits?: { amount: number; user?: { displayName: string } | null }[]
 }
@@ -39,6 +41,7 @@ export function snapshot(e: ExpenseLike): Snapshot {
     category: e.category,
     ledger: e.group?.isPersonal ? 'Personal' : e.group?.isDirect ? 'Non-group' : e.group?.name || '',
     splits: (e.splits || []).map((s) => ({ name: s.user?.displayName || '?', amount: s.amount })).sort((a, b) => a.name.localeCompare(b.name)),
+    account: e.asset?.name || null,
   }
 }
 
@@ -59,6 +62,7 @@ export function diff(a: Snapshot, b: Snapshot): Change[] {
   add('Category', categoryMeta(a.category).label, categoryMeta(b.category).label)
   add('Where', a.ledger, b.ledger)
   add('Split', splitText(a.splits), splitText(b.splits))
+  add('Account', a.account || '—', b.account || '—')
   return out
 }
 

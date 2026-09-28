@@ -60,7 +60,7 @@ export function parseRules(text: string, ctx: ParseContext & { methodKinds: Reco
   if (/\b(yesterday|kal)\b/.test(raw)) date = shiftDay(ctx.today, -1)
 
   // need level
-  const need: ParsedEntry['need'] = /\bluxury\b/.test(raw) ? 'luxury' : /\bsemi\b/.test(raw) ? 'semi' : /\bessential\b/.test(raw) ? 'essential' : null
+  const need: ParsedEntry['need'] = /\b(sip|invest(ed|ment)?|mutual fund|ppf|nps|fd)\b/.test(raw) ? 'investment' : /\bluxury\b/.test(raw) ? 'luxury' : /\bsemi\b/.test(raw) ? 'semi' : /\bessential\b/.test(raw) ? 'essential' : null
 
   // payment method
   let method: string | null = null
@@ -80,7 +80,7 @@ export function parseRules(text: string, ctx: ParseContext & { methodKinds: Reco
 
   const description = t.split(' ').filter((w) => w && !FILLER.has(w) && !/^[@#]/.test(w)).join(' ')
   const pretty = description ? description.replace(/(^|\s)\S/g, (c) => c.toUpperCase()) : ''
-  const base = { amount: amt.value, need, category: null, method, date, group, shares: [] as ParsedEntry['shares'] }
+  const base = { amount: amt.value, need, category: null, method, date, group, shares: [] as ParsedEntry['shares'], account: null }
 
   const first = (re: RegExp) => { const m = raw.match(re); return m ? findFriend(m[1]) : null }
 

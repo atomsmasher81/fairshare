@@ -27,6 +27,7 @@ const config: Config = {
         essential: token("essential"),
         semi: token("semi"),
         luxury: token("luxury"),
+        invest: token("invest"),
       },
       fontFamily: {
         sans: ["var(--font-sans)", "ui-sans-serif", "system-ui", "-apple-system", "sans-serif"],

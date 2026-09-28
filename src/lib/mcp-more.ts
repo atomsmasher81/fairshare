@@ -12,6 +12,7 @@ import { entriesFor, groupLedger, timeline, type Entry } from '@/lib/queries'
 import { inr, istDay, NEED_META, CATEGORIES, categoryMeta, type Need } from '@/lib/format'
 import { generateInviteCode } from '@/lib/auth'
 import { SITE } from '@/lib/site'
+import { netWorth, accountDetail, recordValues, kindMeta, ASSET_KIND_KEYS } from '@/lib/wealth'
 /* eslint-disable @typescript-eslint/no-require-imports */
 const ledger = require('@/lib/ledger')
 const { notifyExpenseSplitMembers, notifyPaymentChange, notifyAddedToGroup } = require('@/lib/telegram-notifications')
@@ -71,7 +72,7 @@ async function currentInput(userId: string, id: string): Promise<{ input: Expens
     expense: { id: e.id, description: e.description },
     input: {
       description: e.description, amount: e.amount, needLevel: (e.needLevel as ExpenseInput['needLevel']) || null,
-      paymentMethodId: e.paymentMethodId, date: istDay(e.date), target, paidById: e.paidById, splitMode,
+      paymentMethodId: e.paymentMethodId, assetId: e.assetId, date: istDay(e.date), target, paidById: e.paidById, splitMode,
       participants, splits: e.splits.map((s) => ({ userId: s.userId, amount: s.amount })), category: e.category,
     },
   }
@@ -89,7 +90,7 @@ export function registerMoreTools(server: McpServer, userId: string) {
       to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional().describe('YYYY-MM-DD inclusive (default: today)'),
       friend: z.string().optional(),
       group: z.string().optional(),
-      need: z.enum(['essential', 'semi', 'luxury', 'none']).optional(),
+      need: z.enum(['essential', 'semi', 'luxury', 'investment', 'none']).optional(),
       payment_method: z.string().optional(),
       category: z.enum(CATEGORIES as [string, ...string[]]).optional(),
       include_deleted: z.boolean().optional(),
@@ -157,8 +158,9 @@ export function registerMoreTools(server: McpServer, userId: string) {
       id: z.string(),
       amount: z.number().positive().optional().describe('Rupees'),
       description: z.string().max(120).optional(),
-      need: z.enum(['essential', 'semi', 'luxury', 'none']).optional(),
+      need: z.enum(['essential', 'semi', 'luxury', 'investment', 'none']).optional(),
       payment_method: z.string().optional().describe('A payment method name, or "none"'),
+      account: z.string().optional().describe('For investments: the net-worth account it went into, or "none"'),
       date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
       category: z.enum(CATEGORIES as [string, ...string[]]).optional(),
       move_to: z.enum(['personal', 'friends', 'group']).optional().describe('Where the expense should live; with "friends" give split_with, with "group" give group'),
@@ -179,6 +181,14 @@ export function registerMoreTools(server: McpServer, userId: string) {
     if (a.need) input.needLevel = a.need === 'none' ? null : a.need
     if (a.date) input.date = a.date
     if (a.category) input.category = a.category
+    if (a.account) {
+      if (a.account.toLowerCase() === 'none') input.assetId = null
+      else {
+        const r = findOne(ctx.accounts, a.account, 'account')
+        if (r.error) return fail(r.error)
+        input.assetId = r.item!.id
+      }
+    }
     if (a.payment_method) {
       if (a.payment_method.toLowerCase() === 'none') input.paymentMethodId = null
       else {
@@ -469,5 +479,106 @@ export function registerMoreTools(server: McpServer, userId: string) {
     }
     await prisma.user.update({ where: { id: userId }, data })
     return text(`Saved: ${Object.keys(data).join(', ')}.`)
+  })
+
+  /* ---------- Net worth ---------- */
+
+  server.registerTool('net_worth', {
+    title: 'Net worth and accounts',
+    description: 'The user’s net worth: every account (bank, mutual fund, stocks, FD, PPF, EPF, NPS, gold, loans…) with money put in, current value and returns, plus the total and change this month. Call this before update_accounts to see existing account names.',
+    inputSchema: { include_archived: z.boolean().optional() },
+    annotations: { readOnlyHint: true },
+  }, async ({ include_archived }) => {
+    const nw = await netWorth(userId, { includeArchived: include_archived })
+    if (!nw.accounts.length) return text('No accounts yet. Use update_accounts with names, kinds and values to create them.')
+    const pct = (v: number | null) => (v === null ? '' : ` (${v >= 0 ? '+' : ''}${v.toFixed(1)}%)`)
+    return text([
+      `Net worth: ${inr(nw.total)}${nw.loans ? ` (${inr(nw.assets)} assets − ${inr(nw.loans)} loans)` : ''}`,
+      `Put in: ${inr(nw.invested)} · returns ${nw.gain >= 0 ? '+' : '−'}${inr(Math.abs(nw.gain))}${pct(nw.gainPct)}`,
+      nw.changeThisMonth !== null ? `Change this month: ${nw.changeThisMonth >= 0 ? '+' : '−'}${inr(Math.abs(nw.changeThisMonth))}` : '',
+      `Last updated: ${nw.lastUpdate ? istDay(nw.lastUpdate) : 'never'}`,
+      '',
+      ...nw.accounts.map((a) => `${a.name} — ${kindMeta(a.kind).label}${a.archived ? ' [archived]' : ''}: ${a.isLoan ? `owes ${inr(a.value)}` : `worth ${inr(a.value)}, put in ${inr(a.invested)}${pct(a.gainPct)}`}${a.updatedAt ? `, as of ${istDay(a.updatedAt)}` : ''}${a.addedSince ? ` (+${inr(a.addedSince)} logged since)` : ''}  [id ${a.id}]`),
+    ].filter((l) => l !== null).join('\n'))
+  })
+
+  server.registerTool('update_accounts', {
+    title: 'Update account values (e.g. from a screenshot)',
+    description: 'Record current values for one or more accounts in one go — ideal when the user shares a screenshot of a portfolio, bank or PF statement. Accounts are matched by name (case-insensitive, partial ok); unknown names are created with the given kind. Omit invested or value to keep the current number. For a loan, value is what is still owed. Show the user what you will record before calling if the screenshot was unclear.',
+    inputSchema: {
+      date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional().describe('As-of date, YYYY-MM-DD; defaults to today'),
+      accounts: z.array(z.object({
+        name: z.string().min(1).max(60).describe('Account name, e.g. "Axis Bluechip Fund", "HDFC savings", "PPF"'),
+        kind: z.enum(ASSET_KIND_KEYS as [string, ...string[]]).optional().describe('Only used when creating a new account'),
+        invested: z.number().nonnegative().optional().describe('Total money put in so far (principal), rupees'),
+        value: z.number().nonnegative().optional().describe('What it is worth now (or still owed, for a loan), rupees'),
+        note: z.string().max(200).optional(),
+      })).min(1).max(50),
+    },
+  }, async ({ date, accounts }) => {
+    try {
+      const d = date || istDay(new Date())
+      const res = await recordValues(userId, new Date(`${d}T00:00:00+05:30`), accounts.map((a) => ({
+        name: a.name, kind: a.kind, note: a.note,
+        invested: a.invested !== undefined ? toPaise(a.invested) : undefined,
+        value: a.value !== undefined ? toPaise(a.value) : undefined,
+      })), 'mcp')
+      const nw = await netWorth(userId)
+      return text([
+        `Recorded as of ${d}:`,
+        ...res.map((r) => `${r.created ? '＋ new ' : ''}${r.name}: value ${inr(r.before.value)} → ${inr(r.after.value)}, put in ${inr(r.before.invested)} → ${inr(r.after.invested)}`),
+        `Net worth now ${inr(nw.total)}.`,
+      ].join('\n'))
+    } catch (e) {
+      return fail(errMsg(e, 'Couldn’t record those values.'))
+    }
+  })
+
+  server.registerTool('account_history', {
+    title: 'One account’s history',
+    description: 'Every recorded update and every logged investment for one account.',
+    inputSchema: { account: z.string().describe('Account name or id') },
+    annotations: { readOnlyHint: true },
+  }, async ({ account }) => {
+    const all = await prisma.asset.findMany({ where: { userId }, select: { id: true, name: true } })
+    const hit = all.find((x) => x.id === account) || findOne(all, account, 'account').item
+    if (!hit) return fail(findOne(all, account, 'account').error || 'Account not found')
+    const d = (await accountDetail(userId, hit.id))!
+    const rows = [
+      ...d.asset.snapshots.map((s) => ({ t: s.date, line: `${istDay(s.date)}  update: worth ${inr(s.value)}, put in ${inr(s.invested)}${s.source !== 'manual' ? ` (via ${s.source})` : ''}${s.note ? ` — ${s.note}` : ''}  [snapshot ${s.id}]` })),
+      ...d.asset.expenses.map((e) => ({ t: e.date, line: `${istDay(e.date)}  invested ${inr(e.amount)} — ${e.description}  [expense ${e.id}]` })),
+    ].sort((a, b) => b.t.getTime() - a.t.getTime())
+    return text([`${d.asset.name} (${kindMeta(d.asset.kind).label}): worth ${inr(d.position.value)}, put in ${inr(d.position.invested)}`, ...rows.map((r) => r.line)].join('\n'))
+  })
+
+  server.registerTool('manage_account', {
+    title: 'Rename, re-type, archive or fix an account',
+    description: 'Rename an account, change its kind, archive / unarchive it (archived accounts leave the net worth), or delete a mistaken update by snapshot id (from account_history).',
+    inputSchema: {
+      account: z.string().optional().describe('Account name or id'),
+      action: z.enum(['rename', 'set_kind', 'archive', 'unarchive', 'delete_snapshot']),
+      new_name: z.string().min(1).max(60).optional(),
+      kind: z.enum(ASSET_KIND_KEYS as [string, ...string[]]).optional(),
+      snapshot_id: z.string().optional(),
+    },
+  }, async (a) => {
+    if (a.action === 'delete_snapshot') {
+      if (!a.snapshot_id) return fail('Give snapshot_id.')
+      const s = await prisma.assetSnapshot.findFirst({ where: { id: a.snapshot_id, asset: { userId } }, include: { asset: { select: { name: true } } } })
+      if (!s) return fail('Snapshot not found.')
+      await prisma.assetSnapshot.delete({ where: { id: s.id } })
+      return text(`Deleted the ${istDay(s.date)} update of ${s.asset.name}.`)
+    }
+    if (!a.account) return fail('Give account.')
+    const all = await prisma.asset.findMany({ where: { userId }, select: { id: true, name: true } })
+    const r = all.find((x) => x.id === a.account) ? { item: all.find((x) => x.id === a.account) } : findOne(all, a.account, 'account')
+    if (!r.item) return fail(r.error || 'Account not found')
+    const data: { name?: string; kind?: string; archivedAt?: Date | null } = {}
+    if (a.action === 'rename') { if (!a.new_name) return fail('Give new_name.'); data.name = a.new_name.trim() }
+    if (a.action === 'set_kind') { if (!a.kind) return fail('Give kind.'); data.kind = a.kind }
+    if (a.action === 'archive') data.archivedAt = new Date()
+    if (a.action === 'unarchive') data.archivedAt = null
+    await prisma.asset.update({ where: { id: r.item.id }, data })
+    return text(`Done: ${r.item.name} — ${a.action.replace('_', ' ')}${data.name ? ` → ${data.name}` : ''}${data.kind ? ` → ${data.kind}` : ''}.`)
   })
 }

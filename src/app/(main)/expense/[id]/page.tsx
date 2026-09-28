@@ -89,6 +89,7 @@ export default async function EditExpensePage({ params, searchParams }: { params
         splitMode,
         participants,
         splits: expense.splits.map((s) => ({ userId: s.userId, amount: s.amount })),
+        assetId: expense.assetId,
       }}
     />
   )

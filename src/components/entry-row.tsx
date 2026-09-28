@@ -18,6 +18,7 @@ export function EntryRow({ e, back, showLedger = true }: { e: Entry; back?: stri
     meta.push(e.ledger.kind === 'group' ? e.ledger.name : 'Settle up')
   } else if (e.ledger.kind === 'personal') {
     if (need) meta.push(<span key="n" className="inline-flex items-center gap-1"><span className="h-1.5 w-1.5 rounded-full" style={{ background: NEED_META[need].color }} />{NEED_META[need].short}</span>)
+    if (e.assetName) meta.push(`into ${e.assetName}`)
     if (e.method) meta.push(e.method)
     if (!need && !e.method) meta.push(categoryMeta(e.category).label)
   } else {

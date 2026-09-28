@@ -468,7 +468,7 @@ export function NotificationsSection({ publicKey }: { publicKey: string | null }
 export function McpSection({ url }: { url: string }) {
   const cmd = `claude mcp add --transport http fairshare ${url} --header "Authorization: Bearer <your key>"`
   return (
-    <Block title="Use with Claude (MCP)" hint="Let Claude or any MCP client add expenses, read your month and balances, and settle up — as you.">
+    <Block id="mcp" title="Use with Claude (MCP)" hint="Let Claude or any MCP client add expenses, read your month and balances, update your net worth, and settle up — as you.">
       <div className="card space-y-3 p-4 text-[13.5px]">
         <div className="flex items-center gap-2">
           <span className="w-12 shrink-0 text-muted">URL</span>

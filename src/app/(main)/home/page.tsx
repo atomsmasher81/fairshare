@@ -7,6 +7,7 @@ import { EntryRow } from '@/components/entry-row'
 import { SayIt } from '@/components/say-it'
 import { ReviewInbox } from '@/components/review-inbox'
 import { EmptyState, Section } from '@/components/kit'
+import { netWorth } from '@/lib/wealth'
 
 export const dynamic = 'force-dynamic'
 export const metadata = { title: 'Home' }
@@ -19,12 +20,13 @@ function greeting() {
 export default async function HomePage() {
   const userId = await requireUserId()
   const month = monthRange(0)
-  const [me, entries, bal, pending, methods] = await Promise.all([
+  const [me, entries, bal, pending, methods, worth] = await Promise.all([
     prisma.user.findUnique({ where: { id: userId }, select: { displayName: true } }),
     entriesFor(userId, month.from, month.to),
     balances(userId),
     pendingReview(userId),
     ledger.listPaymentMethods(prisma, userId) as Promise<{ id: string; name: string }[]>,
+    netWorth(userId),
   ])
   const sum = summarize(entries, month.dayOfMonth || month.daysInMonth)
   const recent = [...entries].sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1)).slice(0, 6)
@@ -71,6 +73,7 @@ export default async function HomePage() {
             {inr(sum.dailyAvg, { decimals: 'never' })} a day on average · {daysLeft === 0 ? 'last day of the month' : `${daysLeft} day${daysLeft === 1 ? '' : 's'} left`}
           </p>
         )}
+        {sum.invested > 0 && <p className="mt-1 text-[13px] text-muted">Plus <span className="num font-medium text-invest">{inr(sum.invested, { decimals: 'never' })}</span> invested</p>}
       </Link>
 
       {/* Balances */}
@@ -96,6 +99,21 @@ export default async function HomePage() {
           </>
         )}
       </Link>
+
+      {worth.accounts.some((a) => !a.archived) && (
+        <Link href="/wealth" className="card flex items-center justify-between p-5 transition-transform active:scale-[0.99]">
+          <div>
+            <p className="text-[14px] text-muted">Net worth</p>
+            <p className="num mt-0.5 text-[24px] font-semibold tracking-[-0.03em]">{worth.total < 0 ? '−' : ''}{inr(Math.abs(worth.total), { decimals: 'never' })}</p>
+            {worth.changeThisMonth ? (
+              <p className={`num text-[13px] ${worth.changeThisMonth > 0 ? 'text-pos' : 'text-neg'}`}>{worth.changeThisMonth > 0 ? '+' : '−'}{inr(Math.abs(worth.changeThisMonth), { decimals: 'never' })} this month</p>
+            ) : worth.gainPct !== null && worth.gain !== 0 ? (
+              <p className={`num text-[13px] ${worth.gain > 0 ? 'text-pos' : 'text-neg'}`}>{worth.gain > 0 ? '+' : ''}{worth.gainPct.toFixed(1)}% overall returns</p>
+            ) : null}
+          </div>
+          <ChevronRight size={18} className="text-faint" />
+        </Link>
+      )}
 
       <SayIt methods={methods} />
 

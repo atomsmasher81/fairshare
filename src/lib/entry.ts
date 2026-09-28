@@ -10,7 +10,7 @@ import { diff, snapshot } from '@/lib/history'
 const ledger = require('@/lib/ledger')
 const { parseQuickText, guessCategory } = require('@/lib/parse')
 
-export type NeedLevel = 'essential' | 'semi' | 'luxury'
+export type NeedLevel = 'essential' | 'semi' | 'luxury' | 'investment'
 
 export interface Draft {
   kind: 'expense' | 'settlement'
@@ -19,6 +19,7 @@ export interface Draft {
   needLevel: NeedLevel | null
   category: string
   paymentMethodId: string | null
+  assetId?: string | null // investments: which account
   date: string // ISO
   // where it goes
   groupId: string | null // null = personal (or direct ledger when friendIds set)
@@ -50,10 +51,11 @@ export interface EntryContext {
   defaultMethodId: string | null
   aiInstructions: string | null
   frequentItems: string[]
+  accounts: { id: string; name: string; kind: string }[]
 }
 
 export async function loadContext(userId: string): Promise<EntryContext> {
-  const [me, methods, friends, groups, recent] = await Promise.all([
+  const [me, methods, friends, groups, recent, accounts] = await Promise.all([
     prisma.user.findUnique({ where: { id: userId }, select: { displayName: true, defaultMethodId: true, aiInstructions: true } }),
     ledger.listPaymentMethods(prisma, userId),
     ledger.listFriends(prisma, userId),
@@ -62,6 +64,7 @@ export async function loadContext(userId: string): Promise<EntryContext> {
       where: { createdById: userId, deletedAt: null, needsReview: false },
       orderBy: { createdAt: 'desc' }, take: 300, select: { description: true },
     }),
+    prisma.asset.findMany({ where: { userId, archivedAt: null }, orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }], select: { id: true, name: true, kind: true } }),
   ])
   // Most-used descriptions: lets the AI fix dictation slips like "photo" → "Auto"
   const counts = new Map<string, { name: string; n: number }>()
@@ -74,7 +77,7 @@ export async function loadContext(userId: string): Promise<EntryContext> {
   }
   const frequentItems = Array.from(counts.values()).sort((a, b) => b.n - a.n).slice(0, 30).map((c) => c.name)
   const defaultMethodId = me?.defaultMethodId && methods.some((m: { id: string }) => m.id === me.defaultMethodId) ? me.defaultMethodId : null
-  return { userId, meName: me?.displayName || 'You', methods, friends, groups, defaultMethodId, aiInstructions: me?.aiInstructions || null, frequentItems }
+  return { userId, meName: me?.displayName || 'You', methods, friends, groups, defaultMethodId, aiInstructions: me?.aiInstructions || null, frequentItems, accounts }
 }
 
 const IST = 5.5 * 3600e3
@@ -169,6 +172,7 @@ async function draftFromTextInner(text: string, ctx: EntryContext): Promise<{ dr
     defaultMethod: ctx.methods.find((m) => m.id === ctx.defaultMethodId)?.name || null,
     frequentItems: ctx.frequentItems,
     instructions: ctx.aiInstructions,
+    accounts: ctx.accounts.map((a) => a.name),
   }
   const methodKinds = Object.fromEntries(ctx.methods.map((m) => [m.name, (m as { kind?: string }).kind || 'other']))
 
@@ -248,6 +252,7 @@ async function draftFromTextInner(text: string, ctx: EntryContext): Promise<{ dr
       needLevel: parsed.need,
       category: parsed.category,
       paymentMethodId: method?.id || null,
+      assetId: parsed.account ? ctx.accounts.find((a) => a.name === parsed.account)?.id || null : null,
       day: parsed.date,
       groupId: group?.id || null,
       groupName: group?.name || null,
@@ -275,6 +280,7 @@ async function quickDraft(raw: string, ctx: EntryContext): Promise<Draft | null>
 interface DraftInput {
   description: string
   amount: number
+  assetId?: string | null
   needLevel?: NeedLevel | null
   category?: string | null
   paymentMethodId?: string | null
@@ -345,6 +351,7 @@ async function finish(ctx: EntryContext, p: DraftInput): Promise<Draft> {
     needLevel,
     category,
     paymentMethodId,
+    assetId: needLevel === 'investment' ? p.assetId || null : null,
     date: dateFromDay(p.day || todayIST()).toISOString(),
     groupId,
     groupName,
@@ -403,6 +410,7 @@ export async function saveDraft(userId: string, d: Draft, source: string) {
     needLevel: d.needLevel,
     paymentMethodId: d.paymentMethodId,
     needsReview: !!d.needsReview,
+    assetId: d.assetId || null,
     inputText: d.inputText || null,
     inputVia: VIA[source] || source,
     parsedBy: d.parsedBy || null,
@@ -427,6 +435,7 @@ export interface ExpenseInput {
   participants?: string[] // for equal: who shares it (defaults to everyone in the ledger)
   splits?: { userId: string; amount: number }[] // for exact
   category?: string | null
+  assetId?: string | null // investments: which account
 }
 
 const NEED_LABEL: Record<string, string> = { essential: 'Essential', semi: 'Semi-essential', luxury: 'Luxury' }
@@ -472,13 +481,16 @@ export async function saveInput(userId: string, input: ExpenseInput, source: str
   const payer = input.paidById && memberIds.includes(input.paidById) ? input.paidById : userId
   const splits = computeSplits(input, memberIds, payer)
   const description = input.description?.trim() || (input.needLevel ? NEED_LABEL[input.needLevel] : 'Expense')
-  const needLevel = input.needLevel && ['essential', 'semi', 'luxury'].includes(input.needLevel) ? input.needLevel : null
+  const needLevel = input.needLevel && ['essential', 'semi', 'luxury', 'investment'].includes(input.needLevel) ? input.needLevel : null
+  const assetId = needLevel === 'investment' && input.assetId
+    ? (await prisma.asset.findFirst({ where: { id: input.assetId, userId }, select: { id: true } }))?.id || null
+    : null
 
   if (!expenseId) {
     const expense = await ledger.createExpense(prisma, {
       userId, group, description, amount: input.amount, category: input.category || guessCategory(description),
       date: dateFromDay(input.date), source, paidById: payer, splits, splitType: input.splitMode,
-      needLevel, paymentMethodId: input.paymentMethodId,
+      needLevel, paymentMethodId: input.paymentMethodId, assetId,
     })
     return expense
   }
@@ -509,6 +521,7 @@ export async function saveInput(userId: string, input: ExpenseInput, source: str
         date: dateFromDay(input.date),
         paidById: payer,
         needLevel,
+        assetId,
         paymentMethodId: methodId,
         splitType: input.splitMode,
         needsReview: false,

@@ -12,8 +12,8 @@ class LedgerError extends Error {
 }
 
 const PERSONAL_TAGS = new Set(['me', 'personal', 'p', 'self', 'mine', 'solo']);
-const NEED_LEVELS = ['essential', 'semi', 'luxury'];
-const NEED_LABELS = { essential: 'Essential', semi: 'Semi-essential', luxury: 'Luxury' };
+const NEED_LEVELS = ['essential', 'semi', 'luxury', 'investment'];
+const NEED_LABELS = { essential: 'Essential', semi: 'Semi-essential', luxury: 'Luxury', investment: 'Investment' };
 const DEFAULT_METHODS = [
   { name: 'PhonePe', kind: 'upi' },
   { name: 'Google Pay', kind: 'upi' },
@@ -136,12 +136,13 @@ const EXPENSE_INCLUDE = {
   paidBy: { select: { id: true, displayName: true } },
   splits: { include: { user: { select: { id: true, displayName: true } } } },
   paymentMethod: { select: { id: true, name: true } },
+  asset: { select: { id: true, name: true } },
 };
 
 async function createExpense(prisma, {
   userId, group, description, amount, category, date, source = 'web', payee = null,
   externalRef = null, needsReview = false, rawText = null, paidById, splits, splitType,
-  needLevel = null, paymentMethodId = null, notes = null, inputText = null, inputVia = null, parsedBy = null,
+  needLevel = null, paymentMethodId = null, notes = null, inputText = null, inputVia = null, parsedBy = null, assetId = null,
 }) {
   if (!Number.isInteger(amount) || amount <= 0) throw new LedgerError('Amount must be greater than 0', 400, 'INVALID_AMOUNT');
   if (amount > 1e11) throw new LedgerError('That amount looks too large', 400, 'INVALID_AMOUNT');
@@ -149,6 +150,10 @@ async function createExpense(prisma, {
   const finalSplits = await resolveSplits(prisma, { group, amount, payer, splits });
   // A payment method only means something when you paid.
   const methodId = payer === userId ? await ownedMethodId(prisma, userId, paymentMethodId) : null;
+  // Only investments point at an account, and only at one of your own
+  const ownedAsset = needLevel === 'investment' && assetId
+    ? await prisma.asset.findFirst({ where: { id: assetId, userId }, select: { id: true } })
+    : null;
 
   return prisma.$transaction(async (tx) => {
     const expense = await tx.expense.create({
@@ -168,6 +173,7 @@ async function createExpense(prisma, {
         paymentMethodId: methodId,
         notes: notes ? String(notes).slice(0, 500) : null,
         splitType: splitType || (splits && splits.length ? 'exact' : 'equal'),
+        assetId: ownedAsset ? ownedAsset.id : null,
         inputText: inputText ? String(inputText) : null,
         inputVia,
         parsedBy,
@@ -193,7 +199,7 @@ async function ownedMethodId(prisma, userId, id) {
 
 function describeExpense(expense) {
   if (expense.group.isPersonal) {
-    const bits = [NEED_LABELS[expense.needLevel], expense.paymentMethod?.name].filter(Boolean);
+    const bits = [NEED_LABELS[expense.needLevel], expense.asset?.name ? `into ${expense.asset.name}` : null, expense.paymentMethod?.name].filter(Boolean);
     return `✅ ${expense.description} ${formatINR(expense.amount)} · Personal${bits.length ? ' · ' + bits.join(' · ') : ''}`;
   }
   const mine = expense.splits.find((s) => s.userId === expense.createdById);

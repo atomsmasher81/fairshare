@@ -50,6 +50,7 @@ export interface Entry {
   source: string
   edited: boolean
   deleted: { by: string; at: string } | null // shown in lists, never counted in totals
+  assetName: string | null // investments: the account the money went into
 }
 
 /** Every expense and payment you're part of in [from, to). */
@@ -76,6 +77,7 @@ export async function entriesFor(userId: string, from?: Date, to?: Date, opts: {
       select: {
         id: true, description: true, amount: true, date: true, createdAt: true, category: true, needLevel: true,
         needsReview: true, source: true, paidById: true, editedAt: true, deletedAt: true, deletedById: true,
+        asset: { select: { name: true } },
         paidBy: { select: { displayName: true } },
         paymentMethod: { select: { name: true } },
         group: { select: { id: true, name: true, isPersonal: true, isDirect: true } },
@@ -130,6 +132,7 @@ export async function entriesFor(userId: string, from?: Date, to?: Date, opts: {
       source: e.source,
       edited: !!e.editedAt,
       deleted: e.deletedAt ? { by: e.deletedById || '', at: e.deletedAt.toISOString() } : null,
+      assetName: e.asset?.name || null,
     }
   })
   for (const s of settlements) {
@@ -156,6 +159,7 @@ export async function entriesFor(userId: string, from?: Date, to?: Date, opts: {
       source: 'web',
       edited: false,
       deleted: s.deletedAt ? { by: s.deletedById || '', at: s.deletedAt.toISOString() } : null,
+      assetName: null,
     })
   }
   const deleterIds = Array.from(new Set(out.map((e) => e.deleted?.by).filter((x): x is string => !!x && x !== userId)))
@@ -171,9 +175,10 @@ export async function entriesFor(userId: string, from?: Date, to?: Date, opts: {
 }
 
 export interface MonthSummary {
-  spent: number // your share of everything, i.e. what the month actually cost you
+  spent: number // your share of everything except investments, i.e. what the month actually cost you
+  invested: number // money you put into investments this month (not spending)
   count: number
-  byNeed: Record<'essential' | 'semi' | 'luxury' | 'unset', number>
+  byNeed: Record<'essential' | 'semi' | 'luxury' | 'investment' | 'unset', number>
   byCategory: [string, number][]
   byMethod: [string, number][] // money that left each account (full amounts you paid)
   top: Entry[]
@@ -181,7 +186,8 @@ export interface MonthSummary {
 }
 
 export function summarize(entries: Entry[], daysElapsed: number): MonthSummary {
-  const byNeed = { essential: 0, semi: 0, luxury: 0, unset: 0 }
+  const byNeed = { essential: 0, semi: 0, luxury: 0, investment: 0, unset: 0 }
+  let invested = 0
   const cat = new Map<string, number>()
   const method = new Map<string, number>()
   let spent = 0
@@ -190,6 +196,11 @@ export function summarize(entries: Entry[], daysElapsed: number): MonthSummary {
     if (e.kind !== 'expense' || e.deleted) continue
     if (e.iPaid) method.set(e.method || 'Not set', (method.get(e.method || 'Not set') || 0) + e.amount)
     if (!e.share) continue
+    if (e.needLevel === 'investment') {
+      invested += e.share
+      byNeed.investment += e.share
+      continue
+    }
     count++
     spent += e.share
     const k = (e.needLevel || 'unset') as keyof typeof byNeed
@@ -197,9 +208,9 @@ export function summarize(entries: Entry[], daysElapsed: number): MonthSummary {
     cat.set(e.category, (cat.get(e.category) || 0) + e.share)
   }
   const sortDesc = (m: Map<string, number>) => Array.from(m.entries()).sort((a, b) => b[1] - a[1])
-  const top = entries.filter((e) => e.kind === 'expense' && !e.deleted && e.share > 0).sort((a, b) => b.share - a.share).slice(0, 5)
+  const top = entries.filter((e) => e.kind === 'expense' && !e.deleted && e.share > 0 && e.needLevel !== 'investment').sort((a, b) => b.share - a.share).slice(0, 5)
   return {
-    spent, count, byNeed, byCategory: sortDesc(cat), byMethod: sortDesc(method), top,
+    spent, invested, count, byNeed, byCategory: sortDesc(cat), byMethod: sortDesc(method), top,
     dailyAvg: daysElapsed > 0 ? Math.round(spent / daysElapsed) : 0,
   }
 }
@@ -316,7 +327,7 @@ export async function editorOptions(userId: string) {
       orderBy: { createdAt: 'desc' }, take: 200,
       select: { description: true, needLevel: true, paymentMethodId: true, category: true },
     }),
-    ledger.lastUsedMethodId(prisma, userId) as Promise<string | null>,
+    prisma.user.findUnique({ where: { id: userId }, select: { defaultMethodId: true } }).then(async (u) => u?.defaultMethodId || (await ledger.lastUsedMethodId(prisma, userId))) as Promise<string | null>,
   ])
   // Most used descriptions first (ties → most recent), with what you picked last time.
   const memory = new Map<string, { description: string; needLevel: string | null; methodId: string | null; category: string; n: number }>()
@@ -334,6 +345,7 @@ export async function editorOptions(userId: string) {
     groups: groups.map((g) => ({ id: g.id, name: g.name, members: g.members.map((m) => ({ id: m.user.id, name: m.user.displayName })) })),
     suggestions,
     lastMethodId: lastMethod || methods[0]?.id || null,
+    accounts: await prisma.asset.findMany({ where: { userId, archivedAt: null }, orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }], select: { id: true, name: true } }),
   }
 }
 export type EditorOptions = Awaited<ReturnType<typeof editorOptions>>

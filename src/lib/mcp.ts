@@ -52,7 +52,7 @@ export function createFairShareMcp(userId: string) {
     {
       instructions:
         'FairShare tracks the user’s personal spending (with a need level: essential / semi-essential / luxury, and a payment method) ' +
-        'and shared expenses with friends and groups. Amounts are Indian rupees. Call get_context first to learn the user’s friends, ' +
+        'and shared expenses with friends and groups, plus a simple net-worth tracker (accounts with money put in and current value; investments are logged as need "investment" and can go into an account). Amounts are Indian rupees. Call get_context first to learn the user’s friends, ' +
         'groups and payment methods. Prefer log_expense for anything the user says in plain words; use add_expense when you already ' +
         'have structured fields. Use search_expenses / get_expense to find things and edit_expense to change any field; ' +
         'deletes are soft (restore_expense / restore_payment). Confirm with the user before delete_expense, delete_payment, ' +
@@ -72,7 +72,8 @@ export function createFairShareMcp(userId: string) {
       `Items waiting in To-sort: ${await prisma.expense.count({ where: { createdById: userId, needsReview: true, deletedAt: null } })}`,
       `Friends: ${ctx.friends.map((f) => f.displayName).join(', ') || 'none'}`,
       `Groups: ${ctx.groups.map((g) => `${g.name} (${g.members.map((m) => m.user.displayName).join(', ')})`).join('; ') || 'none'}`,
-      'Need levels: essential, semi (semi-essential), luxury.',
+      `Net-worth accounts: ${ctx.accounts.map((a) => a.name).join(', ') || 'none'}`,
+      'Need levels: essential, semi (semi-essential), luxury — and investment (money put into an account, not spending).',
     ].join('\n'))
   })
 
@@ -103,7 +104,8 @@ export function createFairShareMcp(userId: string) {
     inputSchema: {
       amount: z.number().positive().describe('Total amount in rupees'),
       description: z.string().max(120).optional().describe('What it was for, e.g. "Groceries"'),
-      need: z.enum(['essential', 'semi', 'luxury']).optional().describe('Need level'),
+      need: z.enum(['essential', 'semi', 'luxury', 'investment']).optional().describe('Need level; investment = money put into savings/investments, not spending'),
+      account: z.string().optional().describe('For investments: the net-worth account it went into'),
       payment_method: z.string().optional().describe('One of the user’s payment methods (only when the user paid)'),
       date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional().describe('YYYY-MM-DD, defaults to today'),
       split_with: z.array(z.string()).optional().describe('Friend names to split with (outside any group)'),
@@ -142,9 +144,17 @@ export function createFairShareMcp(userId: string) {
       if (!m) return fail(`No payment method “${a.payment_method}”. Methods: ${ctx.methods.map((x) => x.name).join(', ')}.`)
       methodId = m.id
     }
+    let assetId: string | null = null
+    if (a.account) {
+      const acc = ctx.accounts.find((x) => x.name.toLowerCase() === a.account!.toLowerCase())
+        || ctx.accounts.find((x) => x.name.toLowerCase().includes(a.account!.toLowerCase()))
+      if (!acc) return fail(`No account “${a.account}”. Accounts: ${ctx.accounts.map((x) => x.name).join(', ') || 'none'}.`)
+      assetId = acc.id
+    }
     try {
       const expense = await saveInput(userId, {
         description: a.description || '',
+        assetId,
         amount: toPaise(a.amount),
         needLevel: a.need || null,
         paymentMethodId: methodId,
@@ -199,6 +209,7 @@ export function createFairShareMcp(userId: string) {
       `By category: ${s.byCategory.map(([c, v]) => `${categoryMeta(c).label} ${inr(v)}`).join(', ') || '—'}.`,
       `Paid out via: ${s.byMethod.map(([k, v]) => `${k} ${inr(v)}`).join(', ') || '—'}.`,
       s.top.length ? `Biggest: ${s.top.map((e) => `${e.description} ${inr(e.share)}`).join(', ')}.` : '',
+      s.invested ? `Invested (not counted as spending): ${inr(s.invested)}.` : '',
       'Spent = personal expenses + the user’s share of shared ones.',
     ]
     return text(lines.filter(Boolean).join('\n'))

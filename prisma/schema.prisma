@@ -46,6 +46,43 @@ model User {
   aiCalls          AiCall[]
   pushSubscriptions PushSubscription[]
   apiKeys          ApiKey[]
+  assets           Asset[]
+}
+
+// Net worth: one row per place money sits (bank, mutual fund, FD, PPF, NPS, gold…).
+// Values live in dated snapshots; "loan" accounts count against net worth.
+model Asset {
+  id         String    @id @default(cuid())
+  userId     String
+  name       String
+  kind       String    @default("other") // bank | mutual_fund | stocks | fd | ppf | epf | nps | gold | crypto | real_estate | loan | other
+  note       String?
+  sortOrder  Int       @default(0)
+  archivedAt DateTime?
+  createdAt  DateTime  @default(now())
+
+  user      User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  snapshots AssetSnapshot[]
+  expenses  Expense[]
+
+  @@index([userId])
+}
+
+// "As of <date>, I had put in <invested> and it's worth <value>". The latest one is the baseline;
+// investment expenses logged after it are added on top until the next update.
+model AssetSnapshot {
+  id        String   @id @default(cuid())
+  assetId   String
+  date      DateTime
+  invested  Int      // principal, paise
+  value     Int      // current value, paise
+  note      String?
+  source    String   @default("manual") // manual | mcp
+  createdAt DateTime @default(now())
+
+  asset Asset @relation(fields: [assetId], references: [id], onDelete: Cascade)
+
+  @@index([assetId, createdAt])
 }
 
 // Personal keys for Shortcuts / SMS automation / MCP. Only a SHA-256 hash is stored,
@@ -181,7 +218,8 @@ model Expense {
   reviewMsgId String?   // Telegram message id of the review prompt
 
   // Personal-finance fields (from the payer's point of view)
-  needLevel       String?  // essential | semi | luxury
+  needLevel       String?  // essential | semi | luxury | investment
+  assetId         String?  // for investments: which account the money went into
   paymentMethodId String?
   notes           String?
   splitType       String   @default("equal") // equal | exact | percent | shares
@@ -192,6 +230,7 @@ model Expense {
   createdBy User           @relation("CreatedBy", fields: [createdById], references: [id])
   splits    ExpenseSplit[]
   paymentMethod PaymentMethod? @relation(fields: [paymentMethodId], references: [id], onDelete: SetNull)
+  asset         Asset?         @relation(fields: [assetId], references: [id], onDelete: SetNull)
 
   @@index([externalRef])
   @@index([groupId, date])

@@ -60,8 +60,10 @@ export const NEED_META = {
   essential: { label: 'Essential', short: 'Essential', color: 'rgb(var(--essential))' },
   semi: { label: 'Semi-essential', short: 'Semi', color: 'rgb(var(--semi))' },
   luxury: { label: 'Luxury', short: 'Luxury', color: 'rgb(var(--luxury))' },
+  investment: { label: 'Investment', short: 'Invest', color: 'rgb(var(--invest))' },
 } as const
 export type Need = keyof typeof NEED_META
+/** Spending levels. Investment is a separate type: money out, but not spending. */
 export const NEEDS: Need[] = ['essential', 'semi', 'luxury']
 
 export const CATEGORY_META: Record<string, { label: string; emoji: string }> = {

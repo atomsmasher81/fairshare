@@ -170,6 +170,7 @@ function Summary({ entries, prevEntries, month, prevLabel, sum, href }: {
           <span>{sum.count} expense{sum.count === 1 ? '' : 's'}</span>
           <span>{inr(sum.dailyAvg, { decimals: 'never' })}/day</span>
         </div>
+        {sum.invested > 0 && <p className="mt-2 text-[13px] text-muted">And you invested <Link href="/wealth" className="num font-medium text-invest">{inr(sum.invested, { decimals: 'never' })}</Link> — kept out of spending.</p>}
         {lent > 0 && <p className="mt-2 text-[13px] text-muted">Plus <span className="num font-medium text-fg">{inr(lent)}</span> you paid for friends — that’s in your balances, not your spending.</p>}
       </div>
 

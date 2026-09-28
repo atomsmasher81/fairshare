@@ -22,6 +22,7 @@ export interface EditorInitial {
   splitMode: 'equal' | 'exact' | 'full'
   participants: string[] | null
   splits: { userId: string; amount: number }[] | null
+  assetId?: string | null
 }
 
 /* ---------- tiny safe calculator: digits . + − × ÷ ---------- */
@@ -75,6 +76,7 @@ export function ExpenseEditor({ options, initial, backHref = '/home', fromDraft,
   const [expr, setExpr] = useState(initial.amount ? String(initial.amount / 100) : '')
   const [description, setDescription] = useState(initial.description)
   const [need, setNeed] = useState<Need | null>(initial.needLevel)
+  const [assetId, setAssetId] = useState<string | null>(initial.assetId || null)
   const [methodId, setMethodId] = useState<string | null>(initial.paymentMethodId)
   const [date, setDate] = useState(initial.date)
   const [target, setTarget] = useState(initial.target)
@@ -114,6 +116,7 @@ export function ExpenseEditor({ options, initial, backHref = '/home', fromDraft,
       setExpr(String(d.amount / 100))
       setDescription(d.description || '')
       setNeed(d.needLevel || null)
+      if (d.assetId) setAssetId(d.assetId)
       if (d.paymentMethodId) setMethodId(d.paymentMethodId)
       setDate(istDay(d.date))
       setTarget(d.groupId ? { type: 'group', id: d.groupId } : d.friendIds?.length ? { type: 'friends', ids: d.friendIds } : { type: 'personal' })
@@ -289,6 +292,7 @@ export function ExpenseEditor({ options, initial, backHref = '/home', fromDraft,
       description: description.trim(),
       amount,
       needLevel: need,
+      assetId: need === 'investment' ? assetId : null,
       paymentMethodId: payer === me ? methodId : null,
       date,
       target,
@@ -454,14 +458,14 @@ export function ExpenseEditor({ options, initial, backHref = '/home', fromDraft,
         {/* need level */}
         <div className="mt-4">
           <p className="label mb-2 px-1">Type</p>
-          <div className="grid grid-cols-3 gap-2">
-            {NEEDS.map((n) => (
+          <div className="grid grid-cols-4 gap-1.5">
+            {[...NEEDS, 'investment' as Need].map((n) => (
               <button
                 key={n}
                 type="button"
                 onClick={() => setNeed(need === n ? null : n)}
                 aria-pressed={need === n}
-                className={cn('pressable flex h-11 items-center justify-center gap-2 rounded-2xl border text-[14px] font-medium transition-colors',
+                className={cn('pressable flex h-11 items-center justify-center gap-1.5 rounded-2xl border text-[13.5px] font-medium transition-colors',
                   need === n ? 'border-transparent text-white' : 'border-line/10 bg-card')}
                 style={need === n ? { background: NEED_META[n].color } : undefined}
               >
@@ -470,6 +474,23 @@ export function ExpenseEditor({ options, initial, backHref = '/home', fromDraft,
               </button>
             ))}
           </div>
+          {need === 'investment' && (
+            <div className="mt-2.5">
+              <div className="mb-1.5 flex items-center justify-between px-1">
+                <p className="text-[12.5px] text-muted">Into (adds to that account in Net worth)</p>
+                <Link href="/wealth" className="text-[12px] text-muted hover:text-fg">Accounts</Link>
+              </div>
+              {options.accounts.length ? (
+                <div className="no-scrollbar -mx-4 flex gap-2 overflow-x-auto px-4 md:mx-0 md:flex-wrap md:px-0">
+                  {options.accounts.map((a) => (
+                    <Chip key={a.id} active={assetId === a.id} onClick={() => setAssetId(assetId === a.id ? null : a.id)}>{a.name}</Chip>
+                  ))}
+                </div>
+              ) : (
+                <p className="px-1 text-[13px] text-faint">No accounts yet — add your mutual funds, PPF… under Net worth.</p>
+              )}
+            </div>
+          )}
         </div>
 
         {/* payment method — only meaningful when you paid */}

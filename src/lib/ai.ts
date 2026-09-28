@@ -12,7 +12,7 @@
  * quick retry and the next provider is tried within an overall deadline that suits a Siri request.
  */
 
-export const NEEDS = ['essential', 'semi', 'luxury'] as const
+export const NEEDS = ['essential', 'semi', 'luxury', 'investment'] as const
 export const CATEGORIES = ['food', 'groceries', 'travel', 'utilities', 'rent', 'shopping', 'entertainment', 'health', 'other'] as const
 
 export interface ParseContext {
@@ -23,6 +23,7 @@ export interface ParseContext {
   defaultMethod?: string | null // assumed when no payment method is said
   frequentItems?: string[] // the user's common descriptions, to correct dictation slips ("photo" → Auto)
   instructions?: string | null // the user's own extra rules
+  accounts?: string[] // net-worth accounts (mutual funds, PPF…) an investment can go into
 }
 
 export interface ParsedEntry {
@@ -38,6 +39,7 @@ export interface ParsedEntry {
   paid_by: string // "me" or a friend's name
   split: 'equal' | 'exact' | 'full' | null
   shares: { name: string; amount: number }[]
+  account: string | null // investments: which account
 }
 
 interface Provider {
@@ -82,7 +84,7 @@ function schema(ctx: ParseContext) {
   return {
     type: 'object',
     additionalProperties: false,
-    required: ['intent', 'amount', 'description', 'need', 'category', 'method', 'date', 'group', 'people', 'paid_by', 'split', 'shares'],
+    required: ['intent', 'amount', 'description', 'need', 'category', 'method', 'date', 'group', 'people', 'paid_by', 'split', 'shares', 'account'],
     properties: {
       intent: { type: 'string', enum: ['expense', 'settlement', 'none'] },
       amount: { type: ['number', 'null'] },
@@ -95,6 +97,7 @@ function schema(ctx: ParseContext) {
       people: { type: 'array', items: { type: 'string', enum: people } },
       paid_by: { type: 'string', enum: payers },
       split: nullableEnum(['equal', 'exact', 'full']),
+      account: ctx.accounts?.length ? nullableEnum(ctx.accounts) : { type: 'null' },
       shares: {
         type: 'array',
         items: {
@@ -122,7 +125,10 @@ export function systemPrompt(ctx: ParseContext) {
       ? `  Things this user often logs: ${ctx.frequentItems.join(', ')}. If a word sounds like one of these (e.g. "photo" for "Auto"), use that item.`
       : '',
     '  If nothing says what it was for, use "Expense".',
-    '- need: essential (groceries, rent, bills, medicine, commute), semi (eating out, cabs by choice, household upgrades), luxury (shopping, movies, parties, gadgets, travel for fun). If the user says a level, use it ("semi essential" → semi). Otherwise best guess.',
+    '- need: essential (groceries, rent, bills, medicine, commute), semi (eating out, cabs by choice, household upgrades), luxury (shopping, movies, parties, gadgets, travel for fun), investment (SIP, mutual fund, stocks, FD, PPF, NPS, EPF, gold bought as savings). If the user says a level, use it ("semi essential" → semi). Otherwise best guess.',
+    ctx.accounts?.length
+      ? `- account: for an investment, which of these accounts it went into (e.g. "SIP 5000 in Axis" → the Axis account): ${ctx.accounts.join(', ')}. Otherwise null.`
+      : '- account: null.',
     '- category: best fit.',
     `- method: the payment method mentioned; map "gpay"→Google Pay, "card"/"credit card"/a card brand to the card method, "upi" to the first UPI app listed.${ctx.defaultMethod ? ` If none is mentioned and I paid, use "${ctx.defaultMethod}".` : ' null if none is mentioned.'}`,
     '- date: YYYY-MM-DD only if a day is mentioned ("yesterday", "on Monday"), else null.',
@@ -239,5 +245,6 @@ function sanitize(e: ParsedEntry, ctx: ParseContext): ParsedEntry {
     shares: Array.isArray(e.shares)
       ? e.shares.filter((s) => s && payers.includes(s.name) && typeof s.amount === 'number' && s.amount > 0)
       : [],
+    account: pick(e.account, ctx.accounts || []),
   }
 }
