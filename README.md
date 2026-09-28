@@ -115,8 +115,9 @@ Set these in a `.env` file next to `docker-compose.yml` (all optional):
 | Variable | What it does |
 |---|---|
 | `APP_URL` | Public URL, e.g. `https://money.example.com`. Used in links, and `https://` turns on secure cookies. |
-| `GEMINI_API_KEY` | Natural-language entry & Siri sentences. [Free key](https://aistudio.google.com/apikey). Model: `gemini-3.1-flash-lite` (override with `GEMINI_MODEL`). |
-| `GROQ_API_KEY` / `OPENAI_API_KEY` | Alternative / fallback AI providers (tried in order Gemini → Groq → OpenAI). |
+| `GROQ_API_KEY` | Natural-language entry & Siri sentences. [Free key](https://console.groq.com). `openai/gpt-oss-20b`, ~0.4s. Recommended. |
+| `GEMINI_API_KEY` | Free backup AI ([key](https://aistudio.google.com/apikey)), `gemini-3.1-flash-lite`. Google's free tier is often overloaded. |
+| `OPENAI_API_KEY` | Paid fallback AI provider (tried in order Groq → Gemini → OpenAI; change with `AI_ORDER`). |
 | `TELEGRAM_BOT_TOKEN`, `TELEGRAM_BOT_USERNAME` | Telegram bot. Start it with `docker compose --profile telegram up -d`. |
 | `VAPID_SUBJECT` | Contact for push notifications, e.g. `mailto:you@example.com`. |
 

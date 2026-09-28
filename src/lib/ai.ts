@@ -2,9 +2,9 @@
  * Natural language → structured expense, via any OpenAI-compatible chat API.
  *
  * Providers are tried in order until one answers; configure with env vars:
- *   GEMINI_API_KEY  → gemini-3.1-flash-lite, minimal thinking (~1s, free tier). 2.5 is closed to new keys;
- *                     3.5-flash-lite can't turn thinking off and takes 12s+.
- *   GROQ_API_KEY    → openai/gpt-oss-20b on Groq (free tier, strict JSON schema, ~1s)
+ *   GROQ_API_KEY    → openai/gpt-oss-20b on Groq (free tier, strict JSON schema, ~0.4s) — tried first
+ *   GEMINI_API_KEY  → gemini-3.1-flash-lite, minimal thinking (free tier, often 503 under load),
+ *                     then gemini-flash-lite-latest
  *   OPENAI_API_KEY  → gpt-6-luna (≈ $0.15 per 1,000 parses)
  * Override a model with GROQ_MODEL / OPENAI_MODEL / GEMINI_MODEL / GEMINI_FALLBACK_MODEL.
  *
@@ -49,22 +49,25 @@ interface Provider {
 }
 
 function providers(): Provider[] {
-  const list: Provider[] = []
   const env = process.env
+  const byName: Record<string, Provider[]> = { groq: [], gemini: [], openai: [] }
+  if (env.GROQ_API_KEY) {
+    byName.groq.push({ name: 'groq', baseUrl: 'https://api.groq.com/openai/v1', apiKey: env.GROQ_API_KEY, model: env.GROQ_MODEL || 'openai/gpt-oss-20b', reasoningEffort: 'low' })
+  }
   if (env.GEMINI_API_KEY) {
     const base = 'https://generativelanguage.googleapis.com/v1beta/openai'
-    list.push({ name: 'gemini', baseUrl: base, apiKey: env.GEMINI_API_KEY, model: env.GEMINI_MODEL || 'gemini-3.1-flash-lite', reasoningEffort: 'minimal' })
+    byName.gemini.push({ name: 'gemini', baseUrl: base, apiKey: env.GEMINI_API_KEY, model: env.GEMINI_MODEL || 'gemini-3.1-flash-lite', reasoningEffort: 'minimal' })
     // A second Gemini model is often served from a different capacity pool when the first is overloaded
     const fallback = env.GEMINI_FALLBACK_MODEL ?? 'gemini-flash-lite-latest'
-    if (fallback) list.push({ name: 'gemini', baseUrl: base, apiKey: env.GEMINI_API_KEY, model: fallback, reasoningEffort: 'minimal' })
-  }
-  if (env.GROQ_API_KEY) {
-    list.push({ name: 'groq', baseUrl: 'https://api.groq.com/openai/v1', apiKey: env.GROQ_API_KEY, model: env.GROQ_MODEL || 'openai/gpt-oss-20b', reasoningEffort: 'low' })
+    if (fallback) byName.gemini.push({ name: 'gemini', baseUrl: base, apiKey: env.GEMINI_API_KEY, model: fallback, reasoningEffort: 'minimal' })
   }
   if (env.OPENAI_API_KEY) {
-    list.push({ name: 'openai', baseUrl: 'https://api.openai.com/v1', apiKey: env.OPENAI_API_KEY, model: env.OPENAI_MODEL || 'gpt-6-luna', reasoningEffort: 'none' })
+    byName.openai.push({ name: 'openai', baseUrl: 'https://api.openai.com/v1', apiKey: env.OPENAI_API_KEY, model: env.OPENAI_MODEL || 'gpt-6-luna', reasoningEffort: 'none' })
   }
-  return list
+  // Groq first: on real Siri phrases it was 6/6 correct at ~0.4s, while Gemini's free tier kept returning
+  // 503 "high demand". Override with AI_ORDER=gemini,groq,openai.
+  const order = (env.AI_ORDER || 'groq,gemini,openai').split(',').map((x) => x.trim().toLowerCase())
+  return order.flatMap((n) => byName[n] || [])
 }
 
 export function aiEnabled() {
