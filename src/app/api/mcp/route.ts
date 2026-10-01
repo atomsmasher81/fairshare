@@ -27,7 +27,7 @@ async function handle(request: NextRequest) {
       { status: 401, headers: { 'WWW-Authenticate': 'Bearer realm="fairshare"' } },
     )
   }
-  if (rateLimited(`mcp:${userId}`, 300, 60 * 60e3)) {
+  if (rateLimited(`mcp:${userId}`, 1000, 60 * 60e3)) {
     return NextResponse.json({ jsonrpc: '2.0', error: { code: -32029, message: 'Too many requests — try again in a bit' }, id: null }, { status: 429 })
   }
   const server = createFairShareMcp(userId)
@@ -41,6 +41,18 @@ async function handle(request: NextRequest) {
   }
 }
 
+/**
+ * Stateless server: there is no standalone SSE stream to open and no session to end. Per the MCP spec
+ * we answer 405, which tells clients to stop trying. (Serving GET used to hand back a stream that closed
+ * at once, so clients reconnected in a tight loop and burned through the rate limit.)
+ */
+function notAllowed() {
+  return NextResponse.json(
+    { jsonrpc: '2.0', error: { code: -32000, message: 'Method not allowed — this server is stateless; use POST' }, id: null },
+    { status: 405, headers: { Allow: 'POST' } },
+  )
+}
+
 export const POST = handle
-export const GET = handle
-export const DELETE = handle
+export const GET = notAllowed
+export const DELETE = notAllowed
