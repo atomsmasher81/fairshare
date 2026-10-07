@@ -457,3 +457,69 @@ function inrPlain(paise: number) {
   const n = paise / 100
   return '₹' + n.toLocaleString('en-IN', { maximumFractionDigits: 2 })
 }
+
+/**
+ * Month-by-month spending of one group (whole-group totals, not just my share).
+ * `offset` picks the month to break down; `months` bars end at the current month.
+ */
+export async function groupStats(groupId: string, userId: string, offset = 0, months = 6) {
+  const first = monthRange(-(months - 1))
+  const sel = monthRange(offset)
+  const from = sel.from < first.from ? sel.from : first.from
+  const rows = await prisma.expense.findMany({
+    where: { groupId, deletedAt: null, date: { gte: from, lt: monthRange(0).to } },
+    select: { id: true, description: true, amount: true, date: true, category: true, paidById: true, splits: { select: { userId: true, amount: true } } },
+    orderBy: { date: 'desc' },
+  })
+  const inRange = (d: Date, r: { from: Date; to: Date }) => d >= r.from && d < r.to
+
+  const bars = Array.from({ length: months }, (_, i) => {
+    const r = monthRange(i - (months - 1))
+    const list = rows.filter((e) => inRange(e.date, r))
+    return {
+      offset: r.offset,
+      label: r.label.slice(0, 3),
+      total: list.reduce((a, e) => a + e.amount, 0),
+      mine: list.reduce((a, e) => a + (e.splits.find((s) => s.userId === userId)?.amount || 0), 0),
+    }
+  })
+
+  const summarizeMonth = (r: { from: Date; to: Date }) => {
+    const list = rows.filter((e) => inRange(e.date, r))
+    const paid = new Map<string, number>()
+    const used = new Map<string, number>()
+    const cats = new Map<string, number>()
+    for (const e of list) {
+      paid.set(e.paidById, (paid.get(e.paidById) || 0) + e.amount)
+      cats.set(e.category, (cats.get(e.category) || 0) + e.amount)
+      for (const s of e.splits) used.set(s.userId, (used.get(s.userId) || 0) + s.amount)
+    }
+    return {
+      list,
+      total: list.reduce((a, e) => a + e.amount, 0),
+      mine: used.get(userId) || 0,
+      count: list.length,
+      paid, used,
+      byCategory: [...cats.entries()].sort((a, b) => b[1] - a[1]),
+      top: [...list].sort((a, b) => b.amount - a.amount).slice(0, 5),
+    }
+  }
+
+  const cur = summarizeMonth(sel)
+  // A month still in progress is compared with the same days of last month
+  const prevFull = monthRange(offset - 1)
+  const prevRange = sel.dayOfMonth ? { ...prevFull, to: new Date(Math.min(prevFull.to.getTime(), prevFull.from.getTime() + (Date.now() - sel.from.getTime()))) } : prevFull
+  const prevTotal = prevRange.from >= from
+    ? rows.filter((e) => inRange(e.date, prevRange)).reduce((a, e) => a + e.amount, 0)
+    : (await prisma.expense.aggregate({ where: { groupId, deletedAt: null, date: { gte: prevRange.from, lt: prevRange.to } }, _sum: { amount: true } }))._sum.amount || 0
+  const active = bars.slice(0, -1).filter((b) => b.total > 0) // finished months only
+  return {
+    month: sel,
+    partial: !!sel.dayOfMonth,
+    prevLabel: prevRange.label,
+    prevTotal,
+    ...cur,
+    bars,
+    avg: active.length ? Math.round(active.reduce((a, b) => a + b.total, 0) / active.length) : 0,
+  }
+}

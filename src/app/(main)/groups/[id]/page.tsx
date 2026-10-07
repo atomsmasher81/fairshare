@@ -1,8 +1,8 @@
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
-import { ArrowRight, Plus } from 'lucide-react'
+import { ArrowRight, BarChart3, ChevronRight, Plus } from 'lucide-react'
 import { prisma } from '@/lib/prisma'
-import { entriesFor, groupLedger, requireUserId, ledger } from '@/lib/queries'
+import { entriesFor, groupLedger, groupStats, requireUserId, ledger } from '@/lib/queries'
 import { getSession } from '@/lib/auth'
 import { inr } from '@/lib/format'
 import { EmptyState, PageHeader } from '@/components/kit'
@@ -26,12 +26,13 @@ export default async function GroupPage({ params }: { params: Promise<{ id: stri
     select: { id: true, name: true, inviteCode: true, createdById: true, isDirect: true },
   })
   if (!group) notFound()
-  const [gl, entries, methods, friends, session] = await Promise.all([
+  const [gl, entries, methods, friends, session, stats] = await Promise.all([
     groupLedger(id),
     entriesFor(userId, undefined, undefined, { groupId: id, everyone: true, take: 200, includeDeleted: true }),
     ledger.listPaymentMethods(prisma, userId) as Promise<{ id: string; name: string }[]>,
     ledger.listFriends(prisma, userId) as Promise<{ id: string; displayName: string }[]>,
     getSession(),
+    groupStats(id, userId, 0),
   ])
   if (!gl) notFound()
   const name = (uid: string) => (uid === userId ? 'You' : gl.members.find((m) => m.id === uid)?.displayName.split(' ')[0] || 'Someone')
@@ -88,6 +89,27 @@ export default async function GroupPage({ params }: { params: Promise<{ id: stri
       <Link href={`/add?group=${id}`} className="pressable flex h-12 w-full items-center justify-center gap-2 rounded-2xl bg-ink font-medium text-ink-fg">
         <Plus size={18} /> Add expense
       </Link>
+
+      {stats.bars.some((b) => b.total > 0) && (
+        <Link href={`/groups/${id}/insights`} className="card flex items-center gap-4 p-4 transition-transform active:scale-[0.99]">
+          <span className="min-w-0 flex-1">
+            <span className="flex items-center gap-1.5 text-[14px] text-muted"><BarChart3 size={15} /> Spent in {stats.month.label}</span>
+            <span className="num mt-0.5 block text-[22px] font-semibold tracking-[-0.03em]">{inr(stats.total, { decimals: 'never' })}</span>
+            {stats.prevTotal > 0 && (
+              <span className="block text-[12.5px] text-muted">{inr(stats.prevTotal, { decimals: 'never' })} by this time in {stats.prevLabel}</span>
+            )}
+          </span>
+          <span className="flex h-12 items-end gap-1" aria-hidden>
+            {(() => {
+              const max = Math.max(...stats.bars.map((b) => b.total), 1)
+              return stats.bars.map((b, i) => (
+                <span key={b.offset} className={cn('w-2.5 rounded-sm', i === stats.bars.length - 1 ? 'bg-fg/80' : 'bg-fg/20')} style={{ height: `${Math.max(8, (b.total / max) * 100)}%` }} />
+              ))
+            })()}
+          </span>
+          <ChevronRight size={18} className="text-faint" />
+        </Link>
+      )}
 
       <section className="space-y-2">
         <h2 className="px-1 text-[15px] font-semibold">History</h2>
