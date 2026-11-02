@@ -102,6 +102,108 @@ export function SettleUp({ friend, net, methods, groupId, label, className, vari
   )
 }
 
+/**
+ * Record a payment between any two members of a group — "Shreya paid Ayush" works even if
+ * you weren't part of it. Prefilled from a suggested transfer when `from`/`to`/`amount` are given.
+ */
+export function GroupSettle({ groupId, me, members, methods, from, to, amount: suggested, label, className, variant = 'primary' }: {
+  groupId: string
+  me: string
+  members: { id: string; name: string; upiId: string | null }[]
+  methods: { id: string; name: string }[]
+  from?: string
+  to?: string
+  amount?: number
+  label?: string
+  className?: string
+  variant?: 'primary' | 'secondary'
+}) {
+  const router = useRouter()
+  const [open, setOpen] = useState(false)
+  const [fromId, setFromId] = useState(from || me)
+  const [toId, setToId] = useState(to || '')
+  const [amount, setAmount] = useState(suggested ? String(suggested / 100) : '')
+  const [methodId, setMethodId] = useState<string | null>(null)
+  const [busy, setBusy] = useState(false)
+  const paise = Math.round((parseFloat(amount) || 0) * 100)
+  const nameOf = (id: string, obj = false) => (id === me ? (obj ? 'you' : 'You') : members.find((m) => m.id === id)?.name.split(' ')[0] || 'Someone')
+  const receiver = members.find((m) => m.id === toId)
+  const valid = paise > 0 && !!toId && fromId !== toId
+
+  const show = () => {
+    setFromId(from || me)
+    setToId(to || '')
+    setAmount(suggested ? String(suggested / 100) : '')
+    setOpen(true)
+  }
+  const pickFrom = (id: string) => {
+    setFromId(id)
+    if (id === toId) setToId('')
+  }
+
+  const save = async () => {
+    if (!valid) return
+    setBusy(true)
+    const res = await fetch('/api/settle', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ groupId, fromId, toId, amount: paise, date: todayKey(), paymentMethodId: fromId === me ? methodId : null }),
+    })
+    const j = await res.json().catch(() => ({}))
+    setBusy(false)
+    if (!res.ok) { toast(j.error || 'Couldn’t save', { tone: 'error' }); return }
+    toast(`Recorded: ${nameOf(fromId)} paid ${nameOf(toId, true)} ${inr(paise)}`)
+    setOpen(false)
+    router.refresh()
+  }
+
+  const Btn = variant === 'primary' ? PrimaryButton : SecondaryButton
+  return (
+    <>
+      <Btn className={className} onClick={show}>{label || 'Record a payment'}</Btn>
+      <Sheet open={open} onClose={() => setOpen(false)} title="Record a payment">
+        <p className="label mb-2">Who paid</p>
+        <div className="flex flex-wrap gap-2">
+          {members.map((m) => <Chip key={m.id} active={fromId === m.id} onClick={() => pickFrom(m.id)}>{nameOf(m.id)}</Chip>)}
+        </div>
+        <p className="label mb-2 mt-4">Paid to</p>
+        <div className="flex flex-wrap gap-2">
+          {members.filter((m) => m.id !== fromId).map((m) => <Chip key={m.id} active={toId === m.id} onClick={() => setToId(m.id)}>{nameOf(m.id)}</Chip>)}
+        </div>
+        <div className="relative mt-4">
+          <span className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-[22px] text-muted">₹</span>
+          <input
+            inputMode="decimal"
+            value={amount}
+            onChange={(e) => setAmount(e.target.value.replace(/[^\d.]/g, ''))}
+            className="num h-16 w-full rounded-2xl border border-line/10 bg-bg pl-10 pr-4 text-[28px] font-semibold outline-none focus:border-line/25"
+            aria-label="Amount"
+          />
+        </div>
+
+        {fromId === me && methods.length > 0 && (
+          <div className="mt-4">
+            <p className="label mb-2">Paid with</p>
+            <div className="flex flex-wrap gap-2">
+              {methods.map((m) => <Chip key={m.id} active={methodId === m.id} onClick={() => setMethodId(methodId === m.id ? null : m.id)}>{m.name}</Chip>)}
+            </div>
+          </div>
+        )}
+
+        {fromId === me && receiver?.upiId && paise > 0 && (
+          <a href={upiLink(receiver.upiId, receiver.name, paise)}
+            className="mt-5 flex h-12 w-full items-center justify-center gap-2 rounded-2xl border border-line/10 font-medium">
+            Pay {inr(paise)} with UPI app <ExternalLink size={16} />
+          </a>
+        )}
+        <PrimaryButton className="mt-3 w-full" onClick={save} disabled={busy || !valid}>
+          {busy ? 'Saving…' : toId ? `${nameOf(fromId)} paid ${nameOf(toId, true)}${paise > 0 ? ` ${inr(paise)}` : ''}` : 'Pick who was paid'}
+        </PrimaryButton>
+      </Sheet>
+    </>
+  )
+}
+
 /** Nudge a friend who owes you — uses the share sheet (WhatsApp etc). */
 export function Remind({ name, amount, myUpi }: { name: string; amount: number; myUpi: string | null }) {
   const text = `Hey ${name.split(' ')[0]}, quick reminder — you owe me ${inr(amount)} on FairShare.${myUpi ? ` You can pay me on UPI at ${myUpi}.` : ''} 🙏`

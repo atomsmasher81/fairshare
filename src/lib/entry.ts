@@ -478,7 +478,8 @@ export async function saveInput(userId: string, input: ExpenseInput, source: str
   const group = await resolveTargetGroup(userId, input.target)
   const members = await prisma.groupMember.findMany({ where: { groupId: group.id }, orderBy: { joinedAt: 'asc' }, select: { userId: true } })
   const memberIds = members.map((m) => m.userId)
-  const payer = input.paidById && memberIds.includes(input.paidById) ? input.paidById : userId
+  if (input.paidById && !memberIds.includes(input.paidById)) throw new ledger.LedgerError('Whoever paid must be in this group', 400)
+  const payer = input.paidById || userId
   const splits = computeSplits(input, memberIds, payer)
   const description = input.description?.trim() || (input.needLevel ? NEED_LABEL[input.needLevel] : 'Expense')
   const needLevel = input.needLevel && ['essential', 'semi', 'luxury', 'investment'].includes(input.needLevel) ? input.needLevel : null

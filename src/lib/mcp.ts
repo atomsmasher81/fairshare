@@ -112,6 +112,7 @@ export function createFairShareMcp(userId: string) {
       group: z.string().optional().describe('Group name to split within'),
       paid_by: z.string().optional().describe('"me" (default) or a friend’s name'),
       split: z.enum(['equal', 'they_owe_all']).optional().describe('Equal split (default), or everyone except the payer owes the whole amount'),
+      split_among: z.array(z.string()).optional().describe('In a group: only these members share it ("me" or names). Default: everyone. The user doesn’t have to be one of them.'),
     },
   }, async (a) => {
     const ctx = await loadContext(userId)
@@ -136,6 +137,16 @@ export function createFairShareMcp(userId: string) {
       const r = findFriend(friendsFull, a.paid_by)
       if (r.error) return fail(r.error)
       paidById = r.friend!.id
+    }
+    let participants: string[] | undefined
+    if (a.split_among?.length) {
+      participants = []
+      for (const n of a.split_among) {
+        if (n.toLowerCase() === 'me') { participants.push(userId); continue }
+        const r = findFriend(friendsFull, n)
+        if (r.error) return fail(r.error)
+        participants.push(r.friend!.id)
+      }
     }
     let methodId: string | null = null
     if (a.payment_method) {
@@ -162,6 +173,7 @@ export function createFairShareMcp(userId: string) {
         target,
         paidById,
         splitMode: a.split === 'they_owe_all' ? 'full' : 'equal',
+        participants,
       }, 'mcp')
       if (!expense.group.isPersonal) {
         notifyExpenseSplitMembers({ prisma, expense, group: expense.group, excludeUserIds: [userId] }).catch(() => {})
@@ -260,14 +272,44 @@ export function createFairShareMcp(userId: string) {
 
   server.registerTool('record_payment', {
     title: 'Record a payment (settle up)',
-    description: 'Record money that changed hands with a friend. Confirm with the user first.',
+    description: 'Record money that changed hands. Either with a friend (friend + direction), or inside a group between ANY two members, '
+      + 'even ones that aren’t the user (group + from + to, e.g. Shreya paid Ayush in flat). Confirm with the user first.',
     inputSchema: {
-      friend: z.string(),
-      direction: z.enum(['i_paid', 'they_paid']).describe('i_paid = the user paid the friend; they_paid = the friend paid the user'),
+      friend: z.string().optional().describe('With a friend: who'),
+      direction: z.enum(['i_paid', 'they_paid']).optional().describe('i_paid = the user paid the friend; they_paid = the friend paid the user'),
+      group: z.string().optional().describe('Record it inside this group only'),
+      from: z.string().optional().describe('In a group: who paid ("me" or a member’s name)'),
+      to: z.string().optional().describe('In a group: who received it ("me" or a member’s name)'),
       amount: z.number().positive().describe('Rupees'),
+      date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional().describe('YYYY-MM-DD, defaults to today'),
     },
     annotations: { destructiveHint: false, idempotentHint: false },
-  }, async ({ friend, direction, amount }) => {
+  }, async ({ friend, direction, group, from, to, amount, date }) => {
+    const when = date ? new Date(`${date}T12:00:00+05:30`) : new Date()
+    const paise = toPaise(amount)
+    if (group) {
+      const groups = await ledger.listSharedGroups(prisma, userId) as { id: string; name: string; members: { user: { id: string; displayName: string } }[] }[]
+      const g = groups.find((x) => x.name.toLowerCase() === group.toLowerCase()) || groups.find((x) => x.name.toLowerCase().includes(group.toLowerCase()))
+      if (!g) return fail(`No group called “${group}”. Groups: ${groups.map((x) => x.name).join(', ') || 'none'}.`)
+      const people = g.members.map((m) => m.user).filter((u) => u.id !== userId)
+      // friend + direction also works inside a group
+      const fromName = from || (friend && direction ? (direction === 'they_paid' ? friend : 'me') : undefined)
+      const toName = to || (friend && direction ? (direction === 'they_paid' ? 'me' : friend) : undefined)
+      if (!fromName || !toName) return fail('In a group, say who paid (from) and who received it (to).')
+      const who = (n: string) => (n.toLowerCase() === 'me' ? { friend: { id: userId, displayName: 'you' }, error: undefined } : findFriend(people, n))
+      const f = who(fromName)
+      const t = who(toName)
+      if (f.error) return fail(f.error)
+      if (t.error) return fail(t.error)
+      try {
+        await ledger.recordGroupSettlement(prisma, { userId, groupId: g.id, fromId: f.friend!.id, toId: t.friend!.id, amount: paise, date: when })
+      } catch (e) {
+        return fail((e as { publicMessage?: string }).publicMessage || 'Couldn’t record the payment.')
+      }
+      notifyPayment({ prisma, actorId: userId, fromUserId: f.friend!.id, toUserId: t.friend!.id, amount: paise }).catch(() => {})
+      return text(`Recorded in ${g.name}: ${f.friend!.displayName} paid ${t.friend!.displayName} ${inr(paise)}.`)
+    }
+    if (!friend || !direction) return fail('Say which friend and direction, or a group with from and to.')
     const friends = await ledger.listFriends(prisma, userId)
     const r = findFriend(friends, friend)
     if (r.error) return fail(r.error)
@@ -275,12 +317,12 @@ export function createFairShareMcp(userId: string) {
     const fromId = direction === 'i_paid' ? userId : other.id
     const toId = direction === 'i_paid' ? other.id : userId
     try {
-      await ledger.recordSettlement(prisma, { userId, fromId, toId, amount: toPaise(amount), date: new Date() })
+      await ledger.recordSettlement(prisma, { userId, fromId, toId, amount: paise, date: when })
     } catch (e) {
       return fail((e as { publicMessage?: string }).publicMessage || 'Couldn’t record the payment.')
     }
-    notifyPayment({ prisma, actorId: userId, fromUserId: fromId, toUserId: toId, amount: toPaise(amount) }).catch(() => {})
-    return text(direction === 'i_paid' ? `Recorded: you paid ${other.displayName} ${inr(toPaise(amount))}.` : `Recorded: ${other.displayName} paid you ${inr(toPaise(amount))}.`)
+    notifyPayment({ prisma, actorId: userId, fromUserId: fromId, toUserId: toId, amount: paise }).catch(() => {})
+    return text(direction === 'i_paid' ? `Recorded: you paid ${other.displayName} ${inr(paise)}.` : `Recorded: ${other.displayName} paid you ${inr(paise)}.`)
   })
 
   server.registerTool('delete_expense', {

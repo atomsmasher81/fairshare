@@ -596,7 +596,7 @@ export function ExpenseEditor({ options, initial, backHref = '/home', fromDraft,
           options={[
             { value: 'equal', label: 'Equally' },
             { value: 'exact', label: 'Exact' },
-            { value: 'full', label: payer === me ? 'They owe all' : 'I owe all' },
+            { value: 'full', label: members.length > 2 ? 'Others owe all' : payer === me ? 'They owe all' : 'I owe all' },
           ]}
         />
 

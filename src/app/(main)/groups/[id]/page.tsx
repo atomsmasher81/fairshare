@@ -7,7 +7,7 @@ import { getSession } from '@/lib/auth'
 import { inr } from '@/lib/format'
 import { EmptyState, PageHeader } from '@/components/kit'
 import { EntryRow } from '@/components/entry-row'
-import { SettleUp } from '@/components/settle'
+import { GroupSettle } from '@/components/settle'
 import { GroupMembers } from '@/components/group-manage'
 import { cn } from '@/lib/utils'
 
@@ -40,6 +40,7 @@ export default async function GroupPage({ params }: { params: Promise<{ id: stri
   const mine = gl.transfers.filter((t) => t.from === userId || t.to === userId)
   const others = gl.transfers.filter((t) => t.from !== userId && t.to !== userId)
   const back = `/groups/${id}`
+  const settleMembers = gl.members.map((m) => ({ id: m.id, name: m.displayName, upiId: m.upiId }))
 
   return (
     <div className="space-y-5">
@@ -59,25 +60,24 @@ export default async function GroupPage({ params }: { params: Promise<{ id: stri
           <div className="mt-4 space-y-2 border-t border-line/[0.07] pt-4">
             {[...mine, ...others].map((t) => {
               const involvesMe = t.from === userId || t.to === userId
-              const friendId = t.from === userId ? t.to : t.from
-              const friend = gl.members.find((m) => m.id === friendId)
               return (
                 <div key={`${t.from}-${t.to}`} className="flex items-center gap-2 text-[14px]">
                   <span className={cn('font-medium', !involvesMe && 'text-muted')}>{name(t.from)}</span>
                   <ArrowRight size={14} className="text-faint" />
                   <span className={cn('flex-1 font-medium', !involvesMe && 'text-muted')}>{name(t.to)}</span>
                   <span className={cn('num font-semibold', !involvesMe ? 'text-muted' : t.to === userId ? 'text-pos' : 'text-neg')}>{inr(t.amount)}</span>
-                  {involvesMe && friend && (
-                    <SettleUp
-                      variant="secondary"
-                      label="Settle"
-                      className="h-8 rounded-xl px-3 text-[13px]"
-                      friend={{ id: friend.id, name: friend.displayName, upiId: friend.upiId }}
-                      net={t.to === userId ? t.amount : -t.amount}
-                      methods={methods}
-                      groupId={id}
-                    />
-                  )}
+                  <GroupSettle
+                    variant="secondary"
+                    label="Settle"
+                    className="h-8 rounded-xl px-3 text-[13px]"
+                    groupId={id}
+                    me={userId}
+                    members={settleMembers}
+                    methods={methods}
+                    from={t.from}
+                    to={t.to}
+                    amount={t.amount}
+                  />
                 </div>
               )
             })}
@@ -86,9 +86,14 @@ export default async function GroupPage({ params }: { params: Promise<{ id: stri
         )}
       </div>
 
-      <Link href={`/add?group=${id}`} className="pressable flex h-12 w-full items-center justify-center gap-2 rounded-2xl bg-ink font-medium text-ink-fg">
-        <Plus size={18} /> Add expense
-      </Link>
+      <div className="flex gap-2">
+        <Link href={`/add?group=${id}`} className="pressable flex h-12 flex-1 items-center justify-center gap-2 rounded-2xl bg-ink font-medium text-ink-fg">
+          <Plus size={18} /> Add expense
+        </Link>
+        {gl.members.length > 1 && (
+          <GroupSettle variant="secondary" label="Record payment" className="flex-1" groupId={id} me={userId} members={settleMembers} methods={methods} />
+        )}
+      </div>
 
       {stats.bars.some((b) => b.total > 0) && (
         <Link href={`/groups/${id}/insights`} className="card flex items-center gap-4 p-4 transition-transform active:scale-[0.99]">

@@ -565,6 +565,31 @@ async function recordSettlement(prisma, { userId, fromId, toId, amount, date, no
   });
 }
 
+/**
+ * Record that `fromId` paid `toId` inside one group. Any member can record a payment
+ * between any two members (e.g. Shreya paid Ayush), not just their own.
+ */
+async function recordGroupSettlement(prisma, { userId, groupId, fromId, toId, amount, date, note, paymentMethodId }) {
+  if (!Number.isInteger(amount) || amount <= 0) throw new LedgerError('Enter an amount', 400, 'INVALID_AMOUNT');
+  if (fromId === toId) throw new LedgerError('Pick two different people', 400, 'SELF');
+  const members = await prisma.groupMember.findMany({
+    where: { groupId, group: { deletedAt: null, isPersonal: false } }, select: { userId: true },
+  });
+  const ids = new Set(members.map((m) => m.userId));
+  if (!ids.has(userId)) throw new LedgerError('Group not found', 404, 'GROUP_NOT_FOUND');
+  if (!ids.has(fromId) || !ids.has(toId)) throw new LedgerError('Both people must be in the group', 400, 'BAD_MEMBER');
+  const methodId = fromId === userId ? await ownedMethodId(prisma, userId, paymentMethodId) : null;
+  return prisma.$transaction(async (tx) => {
+    const s = await tx.settlement.create({
+      data: { groupId, fromUserId: fromId, toUserId: toId, amount, date: date || new Date(), note: note || null, createdById: userId },
+    });
+    await tx.activity.create({
+      data: { groupId, userId, type: 'settlement', metadata: JSON.stringify({ settlementId: s.id, fromUserId: fromId, toUserId: toId, amount, paymentMethodId: methodId }) },
+    });
+    return s;
+  });
+}
+
 /** Move everything a placeholder friend was part of onto a real account. */
 async function mergeUsers(prisma, fromId, intoId) {
   if (fromId === intoId) return;
@@ -611,6 +636,7 @@ module.exports = {
   equalSplits,
   getOrCreateDirectGroup,
   recordSettlement,
+  recordGroupSettlement,
   mergeUsers,
   listFriends,
   addFriend,

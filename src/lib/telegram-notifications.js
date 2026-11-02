@@ -182,15 +182,30 @@ async function notifyExpenseSplitMembers({ prisma, expense, group, excludeUserId
 /** Tell the other side of a payment that it was recorded. */
 async function notifyPayment({ prisma, actorId, fromUserId, toUserId, amount }) {
   const { pushToUser } = require('./push');
-  const recipient = actorId === fromUserId ? toUserId : fromUserId;
-  if (!recipient || recipient === actorId) return;
   const actorName = (await resolveUserDisplayName({ prisma, userId: actorId })).split(' ')[0];
-  const title = actorId === fromUserId ? `${actorName} paid you ${formatINR(amount)}` : `${actorName} recorded your payment of ${formatINR(amount)}`;
   const body = 'Settled up in FairShare — tap to see your balance.';
-  await Promise.all([
-    sendTelegramUserNotification({ prisma, userId: recipient, message: `✅ ${title}` }),
-    pushToUser(prisma, recipient, { title, body, url: `/friends/${actorId}`, tag: `payment-${actorId}` }),
-  ]);
+  if (actorId === fromUserId || actorId === toUserId) {
+    const recipient = actorId === fromUserId ? toUserId : fromUserId;
+    if (!recipient || recipient === actorId) return;
+    const title = actorId === fromUserId ? `${actorName} paid you ${formatINR(amount)}` : `${actorName} recorded your payment of ${formatINR(amount)}`;
+    await Promise.all([
+      sendTelegramUserNotification({ prisma, userId: recipient, message: `✅ ${title}` }),
+      pushToUser(prisma, recipient, { title, body, url: `/friends/${actorId}`, tag: `payment-${actorId}` }),
+    ]);
+    return;
+  }
+  // Someone else in the group recorded it (e.g. "Shreya paid Ayush") — tell both of them.
+  const from = (await resolveUserDisplayName({ prisma, userId: fromUserId })).split(' ')[0];
+  const to = (await resolveUserDisplayName({ prisma, userId: toUserId })).split(' ')[0];
+  for (const [uid, other, title] of [
+    [fromUserId, toUserId, `${actorName} recorded that you paid ${to} ${formatINR(amount)}`],
+    [toUserId, fromUserId, `${actorName} recorded that ${from} paid you ${formatINR(amount)}`],
+  ]) {
+    await Promise.all([
+      sendTelegramUserNotification({ prisma, userId: uid, message: `✅ ${title}` }),
+      pushToUser(prisma, uid, { title, body, url: `/friends/${other}`, tag: `payment-${other}` }),
+    ]);
+  }
 }
 
 /** A payment was deleted or restored — tell both sides except whoever did it. */

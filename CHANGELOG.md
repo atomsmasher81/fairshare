@@ -10,6 +10,7 @@ All notable changes to FairShare. Versions follow [semantic versioning](https://
 - MCP tools `net_worth`, `update_accounts`, `account_history`, `manage_account` — update everything from a screenshot.
 - Full MCP control (search, edit, restore, timeline, friends, groups, payment methods, settings); friends and groups in one list.
 - Groq first for parsing (~0.5 s), Gemini as backup; 10 s per attempt.
+- **Settle up between anyone in a group**: "Record payment" on the group page (who paid → who got paid), and Settle on every suggested payment, not just yours. MCP `record_payment` takes `group` + `from` + `to`; `add_expense` takes `split_among`.
 
 ## [1.0.0] — 2026-09-26
 
