@@ -173,7 +173,7 @@ claude mcp add --transport http fairshare https://your-domain/api/mcp --header "
 
 ## Tech stack
 
-Next.js 14 (App Router) · TypeScript · Prisma + SQLite · Tailwind CSS · Web Push · MCP TypeScript SDK · Docker. No external services required.
+Next.js 16 (App Router) · TypeScript · Prisma + SQLite · Tailwind CSS · Web Push · MCP TypeScript SDK · Docker. No external services required.
 
 More detail on the product and design decisions: [docs/PRODUCT.md](docs/PRODUCT.md).
 

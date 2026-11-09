@@ -14,7 +14,8 @@ type Item =
   | { type: 'snap'; id: string; date: Date; at: Date; invested: number; value: number; note: string | null; source: string }
   | { type: 'inv'; id: string; date: Date; at: Date; amount: number; description: string }
 
-export default async function AccountPage({ params }: { params: { id: string } }) {
+export default async function AccountPage(props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   const userId = await requireUserId()
   const d = await accountDetail(userId, params.id)
   if (!d) notFound()
